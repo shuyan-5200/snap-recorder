@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>Snap Recorder</string>
+    <key>CFBundleExecutable</key>
+    <string>SnapRecorder</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.shuyan-5200.SnapRecorder</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>SnapRecorderIcon</string>
+    <key>CFBundleName</key>
+    <string>Snap Recorder</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.2.0</string>
+    <key>CFBundleVersion</key>
+    <string>6</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.video</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Snap Recorder 会把完成的录屏自动保存到“下载”文件夹。</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Snap Recorder 仅在你开启“人声”时使用麦克风，声音只保存在本机导出的录屏文件中。</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>
