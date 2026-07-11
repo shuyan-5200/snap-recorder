@@ -36,27 +36,43 @@ final class RecordingWriter {
         assetWriter.shouldOptimizeForNetworkUse = true
 
         let bitrate = RecordingQuality.videoBitrate(for: outputSize)
-        let compression: [String: Any] = [
+        let baseCompression: [String: Any] = [
             AVVideoAverageBitRateKey: bitrate,
             AVVideoMaxKeyFrameIntervalKey: 120,
             AVVideoMaxKeyFrameIntervalDurationKey: 2,
             AVVideoExpectedSourceFrameRateKey: 60,
             AVVideoAllowFrameReorderingKey: false,
             AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-            AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
-            kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String: false
+            AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC
         ]
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(outputSize.width),
-            AVVideoHeightKey: Int(outputSize.height),
-            AVVideoCompressionPropertiesKey: compression,
-            AVVideoColorPropertiesKey: [
-                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+        let makeVideoSettings: ([String: Any]) -> [String: Any] = { compression in
+            [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: Int(outputSize.width),
+                AVVideoHeightKey: Int(outputSize.height),
+                AVVideoCompressionPropertiesKey: compression,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ]
             ]
-        ]
+        }
+
+        var qualityCompression = baseCompression
+        qualityCompression[
+            kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String
+        ] = false
+        let qualitySettings = makeVideoSettings(qualityCompression)
+        let baseSettings = makeVideoSettings(baseCompression)
+        let videoSettings = assetWriter.canApply(
+            outputSettings: qualitySettings,
+            forMediaType: .video
+        ) ? qualitySettings : baseSettings
+
+        guard assetWriter.canApply(outputSettings: videoSettings, forMediaType: .video) else {
+            throw CaptureError.couldNotStartWriter("当前设备不支持所需的高清视频编码设置。")
+        }
 
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = true
