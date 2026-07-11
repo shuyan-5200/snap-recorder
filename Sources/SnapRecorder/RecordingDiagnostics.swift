@@ -24,30 +24,44 @@ enum RecordingDiagnostics {
         )
 
         let context = CIContext(options: [.useSoftwareRenderer: false])
+        var firstFrameTime = CMTime.invalid
+        var wroteFrameAfterPause = false
         for frame in 0..<24 {
-            try appendFrame(
+            if let frameTime = try appendFrame(
                 number: frame,
                 sourceSize: sourceSize,
                 writer: writer,
                 context: context
-            )
+            ) {
+                if !firstFrameTime.isValid {
+                    firstFrameTime = frameTime
+                }
+            }
             try await Task.sleep(for: .milliseconds(34))
         }
 
         writer.pause()
-        try await Task.sleep(for: .milliseconds(280))
+        let pauseStartedAt = CMClockGetTime(CMClockGetHostTimeClock())
+        try await Task.sleep(for: .milliseconds(800))
+        let pauseEndedAt = CMClockGetTime(CMClockGetHostTimeClock())
         writer.resume()
 
         for frame in 24..<48 {
-            try appendFrame(
+            if let frameTime = try appendFrame(
                 number: frame,
                 sourceSize: sourceSize,
                 writer: writer,
                 context: context
-            )
+            ) {
+                if !firstFrameTime.isValid {
+                    firstFrameTime = frameTime
+                }
+                wroteFrameAfterPause = true
+            }
             try await Task.sleep(for: .milliseconds(34))
         }
 
+        let expectedEndTime = CMClockGetTime(CMClockGetHostTimeClock())
         try await writer.finish()
 
         let asset = AVURLAsset(url: outputURL)
@@ -60,12 +74,26 @@ enum RecordingDiagnostics {
         let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
         let fileSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
 
-        guard duration > 1.2, duration < 2.5,
+        let measuredPause = CMTimeSubtract(pauseEndedAt, pauseStartedAt)
+        let expectedDuration = CMTimeSubtract(
+            CMTimeSubtract(
+                expectedEndTime,
+                firstFrameTime
+            ),
+            measuredPause
+        ).seconds
+
+        guard firstFrameTime.isValid,
+              wroteFrameAfterPause,
+              measuredPause.seconds > 0.6,
+              duration > 1.2,
+              duration < 15,
+              abs(duration - expectedDuration) < 0.35,
               Int(naturalSize.width) == Int(outputSize.width),
               Int(naturalSize.height) == Int(outputSize.height),
               fileSize > 20_000 else {
             throw CaptureError.couldNotFinishWriter(
-                "自检结果异常（时长 \(duration)，尺寸 \(naturalSize)，文件 \(fileSize) bytes）。"
+                "自检结果异常（时长 \(duration)，预期 \(expectedDuration)，尺寸 \(naturalSize)，文件 \(fileSize) bytes）。"
             )
         }
 
@@ -494,12 +522,13 @@ enum RecordingDiagnostics {
         abs(lhs - rhs) / rhs
     }
 
+    @discardableResult
     private static func appendFrame(
         number: Int,
         sourceSize: CGSize,
         writer: RecordingWriter,
         context: CIContext
-    ) throws {
+    ) throws -> CMTime? {
         var pixelBuffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
@@ -559,6 +588,6 @@ enum RecordingDiagnostics {
             throw CaptureError.couldNotStartWriter("自检无法创建视频帧。")
         }
 
-        writer.appendVideo(sampleBuffer)
+        return writer.appendVideo(sampleBuffer) ? timing.presentationTimeStamp : nil
     }
 }
