@@ -1,31 +1,48 @@
-# Snap Recorder
-
 <div align="center">
-  <img src="assets/SnapRecorderIcon.svg" width="88" alt="Snap Recorder 图标">
+  <img src="assets/SnapRecorderIcon.svg" width="96" alt="Snap Recorder 图标">
+  <h1>Snap Recorder</h1>
   <p><strong>极简录屏，高清保存。</strong></p>
-  <p>极简 · 高清 · 双模式 · 本地处理 · Universal 2</p>
+  <p>面向 macOS 的轻量录屏工具：浏览器或整个屏幕，本地处理，录完自动保存。</p>
+  <p><sub>A tiny, local-first macOS screen recorder for browser windows and the full display.</sub></p>
   <p>
+    <a href="https://shuyan-5200.github.io/snap-recorder/"><strong>产品主页</strong></a>
+    ·
     <a href="https://github.com/shuyan-5200/snap-recorder/releases/latest"><strong>下载最新版</strong></a>
     ·
     <a href="#从源码构建">从源码构建</a>
   </p>
+  <p>
+    <a href="https://github.com/shuyan-5200/snap-recorder/releases/latest"><img src="https://img.shields.io/github/v/release/shuyan-5200/snap-recorder?style=flat-square&amp;label=release" alt="最新版本"></a>
+    <a href="https://github.com/shuyan-5200/snap-recorder/actions/workflows/ci.yml"><img src="https://github.com/shuyan-5200/snap-recorder/actions/workflows/ci.yml/badge.svg" alt="构建状态"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/shuyan-5200/snap-recorder?style=flat-square" alt="MIT License"></a>
+    <img src="https://img.shields.io/badge/macOS-14%2B-111111?style=flat-square&amp;logo=apple" alt="macOS 14 或更高版本">
+  </p>
 </div>
 
-Snap Recorder 是一款面向 macOS 的极简高清录屏工具。选择浏览器或整个屏幕，打开需要的声音，录完即可自动保存。
-
 <p align="center">
-  <img src="docs/images/snap-recorder-main.png" width="840" alt="Snap Recorder 主界面：整个屏幕、电脑声音与人声均已开启">
+  <a href="https://shuyan-5200.github.io/snap-recorder/">
+    <img src="docs/images/snap-recorder-main.png" width="840" alt="Snap Recorder 主界面：整个屏幕、电脑声音与人声均已开启">
+  </a>
+  <br>
+  <sub>点击截图查看完整产品主页</sub>
 </p>
 
-## 特性
+Snap Recorder 把录屏缩短成一条最短路径：**选择来源 → 3 秒倒计时 → 录制 → 自动保存到“下载”**。没有账号，没有云同步，也不需要先学习一个编辑器。
+
+| 录制模式 | 最高画质 | 网络请求 | Universal App |
+| --- | --- | --- | --- |
+| 浏览器窗口 / 整个屏幕 | 3840×2160 | 0 | 约 2.2 MB |
+
+## 为什么选择 Snap Recorder
 
 - **两种录制模式**：浏览器、整个屏幕。
 - **声音选择**：电脑声音、人声分别控制。
 - **三种导出方式**：完整视频、视频与人声分开、两种同时导出。
 - **高清成片**：原生像素优先，最高 3840×2160；H.264 High Profile，合并人声时视频轨不二次编码。
+- **干净录制**：主窗口、倒计时与录制控制条不会进入成片。
 - **小而本地**：v0.2.0 Universal App 约 2.2 MB，ZIP 约 1.4 MB；无账号、无统计、无网络请求。
 
-选择来源后，Snap Recorder 会倒计时 3 秒并隐藏主界面。录制中可暂停、继续或结束，文件自动保存到“下载”。Snap Recorder 的窗口和控制条不会进入成片。
+想先完整了解产品，可打开 [Snap Recorder 产品主页](https://shuyan-5200.github.io/snap-recorder/)；想直接使用，可前往 [Releases](https://github.com/shuyan-5200/snap-recorder/releases/latest)。
 
 ## 两种录制模式
 
