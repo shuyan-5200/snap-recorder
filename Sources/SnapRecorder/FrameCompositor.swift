@@ -11,19 +11,24 @@ final class FrameCompositor {
     private let captureCornerStyle: FocusMaskCornerStyle
     private let appliesSoftCornerVignette: Bool
     private let focusMask: CaptureFocusMask?
+    private let cameraOverlayRenderer: CameraOverlayRenderer?
 
     init(
         mode: CaptureMode,
         outputSize: CGSize,
         captureCornerStyle: FocusMaskCornerStyle = .square,
         appliesSoftCornerVignette: Bool = false,
-        focusMask: CaptureFocusMask? = nil
+        focusMask: CaptureFocusMask? = nil,
+        cameraOverlay: CameraOverlaySettings? = nil
     ) {
         self.mode = mode
         self.outputSize = outputSize
         self.captureCornerStyle = captureCornerStyle
         self.appliesSoftCornerVignette = appliesSoftCornerVignette
         self.focusMask = focusMask
+        self.cameraOverlayRenderer = cameraOverlay.map {
+            CameraOverlayRenderer(settings: $0, outputSize: outputSize)
+        }
         self.context = CIContext(options: [
             .useSoftwareRenderer: false,
             .cacheIntermediates: false
@@ -34,7 +39,8 @@ final class FrameCompositor {
     func render(
         source pixelBuffer: CVPixelBuffer,
         into destination: CVPixelBuffer,
-        mouseEffect: MouseEffectSnapshot? = nil
+        mouseEffect: MouseEffectSnapshot? = nil,
+        cameraFrame: CameraFrame? = nil
     ) {
         let source = normalized(CIImage(cvPixelBuffer: pixelBuffer))
         var image: CIImage
@@ -57,6 +63,9 @@ final class FrameCompositor {
         }
         if let mouseEffect {
             image = applyingMouseEffect(mouseEffect, to: image)
+        }
+        if let cameraFrame, let cameraOverlayRenderer {
+            image = cameraOverlayRenderer.composite(cameraFrame.pixelBuffer, over: image)
         }
 
         context.render(

@@ -3,19 +3,21 @@
   <h1>Snap Recorder</h1>
   <p><strong>极简录屏，高清保存。</strong></p>
   <h2>
-    <a href="https://github.com/kennanzhou/snap-recorder-Partial-recording">查看源码</a>
+    <a href="https://github.com/shuyan-5200/snap-recorder">查看源码</a>
     &nbsp;&nbsp;&nbsp;
-    <a href="https://github.com/shuyan-5200/snap-recorder">原项目</a>
+    <a href="https://github.com/shuyan-5200/snap-recorder/releases/latest">下载已发布版本</a>
   </h2>
   <p>面向 macOS 的轻量录屏工具：浏览器、整个屏幕或自定义区域，本地处理，录完选择画质并保存。</p>
   <p><sub>A tiny, local-first macOS screen recorder for browser windows, the full display, and custom regions.</sub></p>
   <p>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/kennanzhou/snap-recorder-Partial-recording?style=flat-square" alt="MIT License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/shuyan-5200/snap-recorder?style=flat-square" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/macOS-14%2B-111111?style=flat-square&amp;logo=apple" alt="macOS 14 或更高版本">
   </p>
 </div>
 
 Snap Recorder 把录屏缩短成一条短路径：**选择来源 → 3 秒倒计时 → 录制 → 选择画质 → 保存到“下载”**。没有账号，没有云同步，也不需要先学习一个编辑器。
+
+当前工作区为 **0.4.0 本机开发版（build 11，尚未发布）**，在 0.3.1 的浏览器、整屏、局部录像基础上加入可选摄像头画中画与苹果原生“自然修饰”，并修复强度滑杆拖动时误移动窗口的问题。GitHub 下载页仍提供已发布版本；本地改动不会自动更新下载包。以下录屏模式截图来自 0.3.1；各构建的安装与真实设备验收状态见[验证清单](docs/verification.md)，旧构建的结果不代表当前构建已通过验收。
 
 | 录制模式 | 导出画质 | 网络请求 | Universal App |
 | --- | --- | --- | --- |
@@ -77,7 +79,18 @@ Snap Recorder 把录屏缩短成一条短路径：**选择来源 → 3 秒倒计
 | --- | --- |
 | 电脑声音 | 录制应用与网页声音，不包含麦克风。 |
 | 人声（麦克风） | 默认关闭；开启后录制系统默认麦克风，并可在结束时选择合并或分轨导出。 |
+| 摄像头 | 默认关闭，与人声独立；开启后显示本地人像预览，录屏成片中带上摄像头画面。 |
 | 录制鼠标 | 默认开启；成片中的鼠标会变成带光晕的圆形光点，点击时出现扩散效果。关闭后不显示鼠标。 |
+
+### 摄像头画中画
+
+开启“摄像头”并完成 macOS 授权后，可在录制前确认人像预览。默认在成片右下角显示圆角方形人像，镜像开启；主窗口内的轻设置提供圆角方形 / 圆形、三档大小、四角位置和镜像开关。位置使用 2×2 卡片，整张卡片均可点击。三种录屏模式都适用，画中画按成片尺寸定位；摄像头不会自动开启麦克风。
+
+“自然修饰”提供 **原图 / 自然 / 柔和** 三档，默认原图，不再使用连续强度滑杆。自然档轻柔肤质，柔和档加强肤质柔化；两档都不瘦脸、不美妆、不改变五官形状。它使用免费的苹果原生 Core Image 与 Vision，仅在本机内存中检测正脸区域并处理摄像头画面，不处理桌面内容。检测不到可靠正脸时保留原图；画面本身越干净，柔化差别越小。预览和成片使用同一份处理后的画面。
+
+摄像头画面在录制时直接合入视频，结束后仍然只需选择画质，以及已开启人声时的人声导出方式。预览浮窗和录制控制不会被重复录入。摄像头不单独导出；自然修饰只定位人脸区域，不识别身份，也不保存人脸模型、特征向量或检测标记。
+
+关闭摄像头开关、停止录制，或在未录制时关闭主窗口，都会释放摄像头。设备未连接、被占用或意外断开时会给出说明；录制中断开会停止录制，并尽力保留已录内容。
 
 ### 快捷键
 
@@ -112,7 +125,7 @@ Snap Recorder 把录屏缩短成一条短路径：**选择来源 → 3 秒倒计
 
 1. 下载或构建 `Snap Recorder.app`。
 2. 把 `Snap Recorder.app` 移入“应用程序”。
-3. 首次启动时允许“屏幕与系统音频录制”；开启人声时再允许麦克风。
+3. 首次启动时允许“屏幕与系统音频录制”；开启人声时再允许麦克风，开启摄像头时再允许摄像头。
 
 当前本地构建的 App 尚未经过 Apple 公证。首次启动如果被 macOS 拦截，请右键 `Snap Recorder.app` →“打开”；仍被拦截时，前往“系统设置”→“隐私与安全性”→“仍要打开”。
 
@@ -144,11 +157,11 @@ Snap Recorder 把录屏缩短成一条短路径：**选择来源 → 3 秒倒计
 
 ## 从源码构建
 
-Snap Recorder 使用 SwiftUI、AppKit、ScreenCaptureKit、Core Image 和 AVFoundation，不依赖第三方库。
+Snap Recorder 使用 SwiftUI、AppKit、ScreenCaptureKit、Core Image、Vision 和 AVFoundation，不依赖第三方库或付费美颜组件。
 
 ```bash
-git clone https://github.com/kennanzhou/snap-recorder-Partial-recording.git
-cd snap-recorder-Partial-recording
+git clone https://github.com/shuyan-5200/snap-recorder.git
+cd snap-recorder
 ./scripts/build-app.sh
 ```
 
@@ -160,12 +173,12 @@ cd snap-recorder-Partial-recording
 
 ## 隐私与边界
 
-所有录屏和声音都只在本机处理。Snap Recorder 不联网、不上传、不收集统计，也不包含第三方分析 SDK。详见 [隐私说明](PRIVACY.md)。
+所有录屏、摄像头画面和声音都只在本机处理。Snap Recorder 不联网、不上传、不收集统计，也不包含第三方分析 SDK。详见 [隐私说明](PRIVACY.md)。
 
-为了保持极简，当前不提供编辑器、剪辑、自动变焦、摄像头、多显示器选择或云分享。DRM 受保护内容仍可能被 macOS 显示为黑屏。
+为了保持极简，当前不提供编辑器、剪辑、自动变焦、摄像头分轨、多显示器选择或云分享。DRM 受保护内容仍可能被 macOS 显示为黑屏。
 
 实现细节与验证记录见 [技术说明](docs/technical-notes.md) 和 [验证清单](docs/verification.md)。欢迎阅读 [贡献指南](CONTRIBUTING.md) 后提交 Issue 或 Pull Request。
 
 ## License
 
-本仓库基于 [shuyan-5200/snap-recorder](https://github.com/shuyan-5200/snap-recorder) 扩展，使用 [MIT License](LICENSE)。
+本项目使用 [MIT License](LICENSE)。感谢 [kennanzhou](https://github.com/kennanzhou/snap-recorder-Partial-recording) 贡献局部录像、聚焦蒙版与鼠标效果等改进。

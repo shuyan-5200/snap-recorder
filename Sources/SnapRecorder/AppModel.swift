@@ -10,6 +10,15 @@ final class AppModel: ObservableObject {
     @Published var capturesSystemAudio = true
     @Published var capturesMicrophone = false
     @Published var capturesMouseEffects = true
+    @Published private(set) var capturesCamera = false
+    @Published private(set) var isPreparingCamera = false
+    @Published private(set) var cameraReady = false
+    @Published var cameraMessage: String?
+    @Published var cameraSettings = CameraOverlaySettings()
+    let cameraService = CameraCaptureService()
+    private var cameraGeneration = UUID()
+    private var cameraOperation: Task<Void, Never>?
+    private var cameraFailureDuringCountdown: String?
     @Published var isRequestingMicrophonePermission = false
     @Published var microphoneMessage: String?
     @Published var browserWindows: [BrowserWindowInfo] = []
@@ -56,6 +65,25 @@ final class AppModel: ObservableObject {
                 await self?.handleUnexpectedStop(error)
             }
         }
+        cameraService.failureHandler = { [weak self] message in
+            // CameraCaptureService delivers failures on the main queue. Preserve
+            // this session identity across the asynchronous state transition.
+            let generation = MainActor.assumeIsolated { self?.cameraGeneration }
+            Task { @MainActor [weak self] in
+                guard let self, self.capturesCamera,
+                      self.cameraGeneration == generation else { return }
+                self.cameraMessage = message
+                self.cameraReady = false
+                if self.phase == .countdown {
+                    self.cameraFailureDuringCountdown = message
+                } else if self.phase.isCapturing {
+                    await self.handleUnexpectedStop(CaptureError.streamStopped(message))
+                } else {
+                    self.setCameraCaptureEnabled(false)
+                    self.cameraMessage = message
+                }
+            }
+        }
     }
 
     var selectedBrowserWindow: BrowserWindowInfo? {
@@ -66,7 +94,9 @@ final class AppModel: ObservableObject {
     var canStartRecording: Bool {
         guard permissionGranted,
               !isRequestingMicrophonePermission,
+              !isPreparingCamera,
               phase == .idle || phase == .failed else { return false }
+        if capturesCamera, !cameraReady { return false }
         if capturesMicrophone {
             guard microphoneFeatureAvailable,
                   AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
@@ -208,6 +238,81 @@ final class AppModel: ObservableObject {
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         ) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func setCameraCaptureEnabled(_ enabled: Bool) {
+        guard !phase.isCapturing, phase != .countdown else { return }
+        let generation = UUID()
+        cameraGeneration = generation
+        capturesCamera = enabled
+        cameraReady = false
+        isPreparingCamera = enabled
+        cameraMessage = nil
+        let previous = cameraOperation
+        if !enabled { windowCoordinator.hideCameraPreview() }
+        cameraOperation = Task { [weak self] in
+            guard let self else { return }
+            if !enabled {
+                await self.cameraService.stop()
+                await previous?.value
+                return
+            }
+            await previous?.value
+            guard self.cameraGeneration == generation else { return }
+            let granted: Bool
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
+            case .authorized: granted = true
+            case .notDetermined: granted = await AVCaptureDevice.requestAccess(for: .video)
+            default: granted = false
+            }
+            guard self.cameraGeneration == generation else { return }
+            guard granted else {
+                self.isPreparingCamera = false
+                self.capturesCamera = false
+                self.cameraMessage = "摄像头权限未开启"
+                return
+            }
+            do {
+                try await self.cameraService.start()
+                guard self.cameraGeneration == generation else { return }
+                self.cameraReady = true
+                self.isPreparingCamera = false
+                self.updateCameraPreview()
+            } catch {
+                guard self.cameraGeneration == generation else { return }
+                self.isPreparingCamera = false
+                self.capturesCamera = false
+                self.cameraMessage = error.localizedDescription
+                self.windowCoordinator.hideCameraPreview()
+            }
+        }
+    }
+
+    func openCameraSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func updateCameraPreview() {
+        cameraService.setPortraitSettings(cameraSettings.portrait)
+        guard capturesCamera, cameraReady else { return }
+        windowCoordinator.showCameraPreview(frames: cameraService.frames, settings: cameraSettings)
+    }
+
+    func mainWindowClosed() {
+        if phase == .idle || phase == .failed || phase == .finished {
+            setCameraCaptureEnabled(false)
+            windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
+        }
+    }
+
+    private func releaseCamera() async {
+        cameraGeneration = UUID()
+        capturesCamera = false
+        cameraReady = false
+        isPreparingCamera = false
+        windowCoordinator.hideCameraPreview()
+        await cameraService.stop()
     }
 
     func captureModeDidChange(_ newMode: CaptureMode) {
@@ -430,6 +535,7 @@ final class AppModel: ObservableObject {
 
             activeCapturesSystemAudio = capturesSystemAudio
             activeCapturesMicrophone = capturesMicrophone
+            cameraFailureDuringCountdown = nil
 
             let outputURL = try makeOutputURL()
             let targetProcessID = mode == .browser ? selectedBrowserWindow?.processID : nil
@@ -443,15 +549,27 @@ final class AppModel: ObservableObject {
                 capturesMouseEffects: capturesMouseEffects,
                 capturesSystemAudio: capturesSystemAudio,
                 capturesMicrophone: capturesMicrophone,
-                outputURL: outputURL
+                outputURL: outputURL,
+                cameraOverlay: capturesCamera ? cameraSettings : nil
             )
 
             phase = .countdown
             windowCoordinator.prepareForCountdown(targetProcessID: targetProcessID)
             await windowCoordinator.runCountdown(from: 3)
             try await Task.sleep(for: .milliseconds(120))
-
-            try await captureService.start(request)
+            if let failure = cameraFailureDuringCountdown {
+                throw CaptureError.couldNotStartWriter(failure)
+            }
+            try await captureService.start(request, cameraFrames: capturesCamera ? cameraService.frames : nil)
+            if let failure = cameraFailureDuringCountdown {
+                let outcome = try await captureService.stop()
+                await releaseCamera()
+                completionNote = "摄像头已停止，已保留录到的内容。\(failure)"
+                applyStopOutcome(outcome)
+                windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
+                windowCoordinator.showMainWindow()
+                return
+            }
 
             phase = .recording
             beginElapsedTimer()
@@ -462,6 +580,7 @@ final class AppModel: ObservableObject {
                 isRecording: true
             )
         } catch {
+            await releaseCamera()
             stopElapsedTimer()
             windowCoordinator.hideRecordingHUD()
             windowCoordinator.showMainWindow()
@@ -472,6 +591,8 @@ final class AppModel: ObservableObject {
             } else {
                 phase = .failed
                 errorMessage = error.localizedDescription
+                recoveryURLs = captureService.recoveryURLs
+                hasRetryableSave = captureService.hasRetryableAutomaticSave
             }
             if mode == .region {
                 isRegionSelectionLocked = windowCoordinator.setRegionSelectionLocked(false)
@@ -538,8 +659,10 @@ final class AppModel: ObservableObject {
 
         do {
             let outcome = try await captureService.stop()
+            await releaseCamera()
             applyStopOutcome(outcome)
         } catch {
+            await releaseCamera()
             errorMessage = error.localizedDescription
             hasRetryableSave = captureService.hasRetryableAutomaticSave
             recoveryURLs = captureService.recoveryURLs
@@ -567,10 +690,12 @@ final class AppModel: ObservableObject {
         windowCoordinator.showMainWindow()
 
         do {
-            completionNote = "录制来源已停止，已尽力保存此前内容。"
+            completionNote = "录制来源已停止，已尽力保存此前内容。\(error.localizedDescription)"
             let outcome = try await captureService.stop()
+            await releaseCamera()
             applyStopOutcome(outcome)
         } catch {
+            await releaseCamera()
             errorMessage = CaptureError.streamStopped(error.localizedDescription).localizedDescription
             hasRetryableSave = captureService.hasRetryableAutomaticSave
             recoveryURLs = captureService.recoveryURLs

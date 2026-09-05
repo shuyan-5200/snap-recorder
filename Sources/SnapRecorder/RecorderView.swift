@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecorderView: View {
     @ObservedObject var model: AppModel
+    @State private var showsCameraOptions = false
 
     var body: some View {
         ZStack {
@@ -23,8 +24,22 @@ struct RecorderView: View {
 
             content
                 .padding(28)
+                .allowsHitTesting(!showsCameraOptions)
+                .accessibilityHidden(showsCameraOptions)
+
+            if showsCameraOptions {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { showsCameraOptions = false }
+                    .accessibilityHidden(true)
+
+                CameraOptionsView(settings: $model.cameraSettings) {
+                    showsCameraOptions = false
+                }
+            }
         }
-        .frame(width: 560, height: 584)
+        .frame(width: 560, height: model.mode == .region ? 730 : 584)
         .preferredColorScheme(.dark)
         .onAppear {
             if model.permissionGranted {
@@ -42,6 +57,13 @@ struct RecorderView: View {
             if newValue != nil {
                 model.browserSelectionNote = nil
             }
+        }
+        .onChange(of: model.cameraSettings) { _, _ in model.updateCameraPreview() }
+        .onChange(of: model.cameraReady) { _, ready in
+            if !ready { showsCameraOptions = false }
+        }
+        .onChange(of: model.phase) { _, phase in
+            if phase != .idle { showsCameraOptions = false }
         }
     }
 
@@ -192,6 +214,7 @@ struct RecorderView: View {
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!model.canStartRecording)
         }
+        .disabled(model.phase != .idle)
     }
 
     private var soundControls: some View {
@@ -264,6 +287,11 @@ struct RecorderView: View {
             Divider()
                 .overlay(Color.white.opacity(0.08))
 
+            cameraControl
+
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -293,6 +321,50 @@ struct RecorderView: View {
         }
         .padding(.horizontal, 13)
         .background(cardBackground)
+    }
+
+    private var cameraControl: some View {
+        HStack(spacing: 12) {
+            Image(systemName: model.capturesCamera ? "video.fill" : "video")
+                .frame(width: 20)
+                .foregroundStyle(model.capturesCamera ? Color.pink : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("摄像头")
+                    .font(.system(size: 13, weight: .medium))
+                Text(model.cameraMessage ?? (model.isPreparingCamera ? "正在准备摄像头…" : model.capturesCamera ? "人像叠入成片 · \(model.cameraSettings.position.title)" : "把你和屏幕一起录下来"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(model.cameraMessage == nil ? Color.secondary : Color.orange)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            if model.cameraMessage != nil {
+                Button("设置") { model.openCameraSettings() }
+                    .buttonStyle(.link).font(.system(size: 11))
+            }
+            if model.cameraReady {
+                Button { showsCameraOptions.toggle() } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13))
+                        .padding(6)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("人像样式")
+                .accessibilityLabel("人像样式")
+            }
+            if model.isPreparingCamera {
+                ProgressView().controlSize(.mini)
+            }
+            Toggle("摄像头", isOn: Binding(
+                get: { model.capturesCamera },
+                set: { model.setCameraCaptureEnabled($0) }
+            ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+        }
+        .frame(minHeight: 42)
+        .animation(.easeInOut(duration: 0.18), value: model.cameraReady)
     }
 
     private var microphoneSubtitle: String {
@@ -1016,7 +1088,7 @@ struct RecordingHUDView: View {
     }
 }
 
-private struct SnapPrimaryButtonStyle: ButtonStyle {
+struct SnapPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {

@@ -34,7 +34,8 @@ final class RecordingWriter {
         captureCornerStyle: FocusMaskCornerStyle = .square,
         appliesSoftCornerVignette: Bool = false,
         focusMask: CaptureFocusMask? = nil,
-        mouseCaptureRect: CGRect? = nil
+        mouseCaptureRect: CGRect? = nil,
+        cameraOverlay: CameraOverlaySettings? = nil
     ) throws {
         try? FileManager.default.removeItem(at: outputURL)
         assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
@@ -92,7 +93,8 @@ final class RecordingWriter {
             outputSize: outputSize,
             captureCornerStyle: captureCornerStyle,
             appliesSoftCornerVignette: appliesSoftCornerVignette,
-            focusMask: focusMask
+            focusMask: focusMask,
+            cameraOverlay: cameraOverlay
         )
         mouseEffectTracker = mouseCaptureRect.map(MouseEffectTracker.init(captureRect:))
 
@@ -151,16 +153,28 @@ final class RecordingWriter {
 
     @discardableResult
     func appendVideo(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard CMSampleBufferDataIsReady(sampleBuffer),
+              let sourceBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return false }
+        return appendVideoFrame(
+            sourceBuffer,
+            at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        )
+    }
+
+    /// Accepts a composition tick independently of screen updates, so a camera
+    /// continues moving even when ScreenCaptureKit reports an idle desktop.
+    @discardableResult
+    func appendVideoFrame(
+        _ sourceBuffer: CVPixelBuffer,
+        at sourceTime: CMTime,
+        cameraFrame: CameraFrame? = nil
+    ) -> Bool {
         guard !isPaused,
               pendingError == nil,
               assetWriter.status == .writing,
-              CMSampleBufferDataIsReady(sampleBuffer),
-              let sourceBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               videoInput.isReadyForMoreMediaData else { return false }
 
-        var presentationTime = adjustedTime(
-            CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        )
+        var presentationTime = adjustedTime(sourceTime)
         guard presentationTime.isValid else { return false }
 
         if lastVideoTime.isValid, CMTimeCompare(presentationTime, lastVideoTime) <= 0 {
@@ -191,7 +205,8 @@ final class RecordingWriter {
         compositor.render(
             source: sourceBuffer,
             into: destination,
-            mouseEffect: mouseEffectTracker?.snapshot(at: presentationTime)
+            mouseEffect: mouseEffectTracker?.snapshot(at: presentationTime),
+            cameraFrame: cameraFrame
         )
         if pixelBufferAdaptor.append(destination, withPresentationTime: presentationTime) {
             lastVideoTime = presentationTime
