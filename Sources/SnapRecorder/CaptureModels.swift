@@ -172,6 +172,7 @@ struct CaptureRequest {
     let capturesSystemAudio: Bool
     let capturesMicrophone: Bool
     let outputURL: URL
+    var cameraOverlay: CameraOverlaySettings? = nil
 }
 
 enum CaptureError: LocalizedError {

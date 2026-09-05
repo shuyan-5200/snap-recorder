@@ -15,6 +15,11 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
     )
     private var stream: SCStream?
     private var writer: RecordingWriter?
+    // Camera recordings need an independent cadence: an idle SCStream frame
+    // contains no new pixels, while the camera must continue to move.
+    private var cameraFrames: CameraFrameStore?
+    private var cameraVideoTimer: DispatchSourceTimer?
+    private var latestScreenBuffer: CVPixelBuffer?
     private var finalOutputURL: URL?
     private var temporaryOutputURL: URL?
     private var temporaryMicrophoneURL: URL?
@@ -103,13 +108,19 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             }
     }
 
-    func start(_ request: CaptureRequest) async throws {
+    func start(_ request: CaptureRequest, cameraFrames: CameraFrameStore? = nil) async throws {
         guard pendingRecording == nil else {
             throw CaptureError.couldNotStartWriter("请先保存上一段录制。")
         }
         recoveryURLs = []
         guard CGPreflightScreenCaptureAccess() else {
             throw CaptureError.permissionRequired
+        }
+        if request.cameraOverlay != nil {
+            guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
+                  cameraFrames?.frame(at: CMClockGetTime(CMClockGetHostTimeClock())) != nil else {
+                throw CaptureError.couldNotStartWriter("摄像头尚未准备好，请重新开启摄像头后重试。")
+            }
         }
 
         if request.capturesMicrophone {
@@ -226,7 +237,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         let configuration = SCStreamConfiguration()
         configuration.width = Int(streamSize.width)
         configuration.height = Int(streamSize.height)
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: request.cameraOverlay == nil ? 60 : 30)
         configuration.queueDepth = 5
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.scalesToFit = true
@@ -272,7 +283,8 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                 captureCornerStyle: request.captureCornerStyle,
                 appliesSoftCornerVignette: request.appliesSoftCornerVignette,
                 focusMask: request.focusMask,
-                mouseCaptureRect: request.capturesMouseEffects ? mouseCaptureRect : nil
+                mouseCaptureRect: request.capturesMouseEffects ? mouseCaptureRect : nil,
+                cameraOverlay: request.cameraOverlay
             )
             createdWriter = writer
 
@@ -288,6 +300,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
             self.stream = stream
             self.writer = writer
+            self.cameraFrames = request.cameraOverlay == nil ? nil : cameraFrames
             finalOutputURL = request.outputURL
             temporaryOutputURL = temporaryURL
             temporaryMicrophoneURL = microphoneURL
@@ -296,6 +309,9 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             prepareFirstFrameWait(requiresMicrophone: request.capturesMicrophone)
 
             try await stream.startCapture()
+            if request.cameraOverlay != nil {
+                await startCameraVideoClock()
+            }
             try await waitForFirstFrame()
         } catch {
             isStopping = true
@@ -304,6 +320,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                 try? await createdStream.stopCapture()
             }
             await drainSampleQueue()
+            await stopCameraVideoClock()
             createdWriter?.cancel()
             self.stream = nil
             self.writer = nil
@@ -345,6 +362,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         }
 
         await drainSampleQueue()
+        await stopCameraVideoClock()
 
         guard let writer,
               let temporaryOutputURL,
@@ -536,6 +554,40 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         isStopping = false
         setAcceptingSamples(false)
         clearFirstFrameWait()
+    }
+
+    private func startCameraVideoClock() async {
+        await withCheckedContinuation { continuation in
+            sampleQueue.async { [weak self] in
+                guard let self else { continuation.resume(); return }
+                let timer = DispatchSource.makeTimerSource(queue: self.sampleQueue)
+                timer.schedule(deadline: .now(), repeating: .nanoseconds(33_333_333), leeway: .milliseconds(2))
+                timer.setEventHandler { [weak self] in
+                    guard let self, self.shouldAcceptSamples(),
+                          let source = self.latestScreenBuffer else { return }
+                    let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+                    guard let frame = self.cameraFrames?.frame(at: hostTime) else { return }
+                    if self.writer?.appendVideoFrame(source, at: hostTime, cameraFrame: frame) == true {
+                        self.signalFirstFrame()
+                    }
+                }
+                self.cameraVideoTimer = timer
+                timer.resume()
+                continuation.resume()
+            }
+        }
+    }
+
+    private func stopCameraVideoClock() async {
+        await withCheckedContinuation { continuation in
+            sampleQueue.async { [weak self] in
+                self?.cameraVideoTimer?.cancel()
+                self?.cameraVideoTimer = nil
+                self?.latestScreenBuffer = nil
+                self?.cameraFrames = nil
+                continuation.resume()
+            }
+        }
     }
 
     private func makeTemporaryOutputURL(pathExtension: String) throws -> URL {
@@ -802,6 +854,10 @@ extension ScreenCaptureService: SCStreamOutput {
         switch outputType {
         case .screen:
             guard Self.isCompleteFrame(sampleBuffer) else { return }
+            if cameraFrames != nil {
+                latestScreenBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+                return
+            }
             if writer?.appendVideo(sampleBuffer) == true {
                 signalFirstFrame()
             }

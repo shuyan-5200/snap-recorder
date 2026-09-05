@@ -1,8 +1,9 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
 @MainActor
-final class WindowCoordinator: NSObject {
+final class WindowCoordinator: NSObject, NSWindowDelegate {
     private weak var model: AppModel?
     private var mainWindow: NSWindow?
     private var countdownPanel: NSPanel?
@@ -12,6 +13,7 @@ final class WindowCoordinator: NSObject {
     private var activationObserver: NSObjectProtocol?
     private let regionOverlay = CaptureRegionOverlayController()
     private var shortcutController: GlobalShortcutController?
+    private let cameraPreview = CameraPreviewController()
 
     init(initialExternalApplication: NSRunningApplication?) {
         lastExternalApplication = initialExternalApplication
@@ -62,19 +64,8 @@ final class WindowCoordinator: NSObject {
         if let mainWindow {
             window = mainWindow
         } else {
-            let created = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 510),
-                styleMask: [.titled, .closable, .fullSizeContentView],
-                backing: .buffered,
-                defer: false
-            )
-            created.title = "Snap Recorder"
-            created.titleVisibility = .hidden
-            created.titlebarAppearsTransparent = true
-            created.isMovableByWindowBackground = true
-            created.isReleasedWhenClosed = false
-            created.backgroundColor = .clear
-            created.sharingType = .none
+            let created = Self.makeMainWindow()
+            created.delegate = self
             created.contentViewController = NSHostingController(
                 rootView: RecorderView(model: model)
             )
@@ -87,6 +78,28 @@ final class WindowCoordinator: NSObject {
         window.level = model.mode == .region ? .screenSaver : .normal
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Also used by the camera-free pointer-interaction test harness.
+    static func makeMainWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 510),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Snap Recorder"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        // SwiftUI controls can leave mouse-down handling to a drag gesture.
+        // Background window dragging steals that sequence before the slider
+        // starts tracking. Only the native title bar may initiate window moves.
+        window.isMovableByWindowBackground = false
+        window.isMovable = true
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.sharingType = .none
+        return window
     }
 
     @discardableResult
@@ -219,6 +232,20 @@ final class WindowCoordinator: NSObject {
 
     func hideRecordingHUD() {
         recordingPanel?.orderOut(nil)
+    }
+
+    func showCameraPreview(frames: CameraFrameStore, settings: CameraOverlaySettings) {
+        cameraPreview.show(frames: frames, settings: settings)
+    }
+
+    func hideCameraPreview() {
+        cameraPreview.hide()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, window === mainWindow {
+            model?.mainWindowClosed()
+        }
     }
 
     private func makeCountdownPanel() -> NSPanel {

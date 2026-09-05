@@ -10,6 +10,8 @@ enum RecordingDiagnostics {
         try validateCaptureSizing()
         try validateRegionEffects()
         try validateMouseEffects()
+        let cameraReport = try await CameraOverlayDiagnostics.run()
+        let portraitReport = try CameraPortraitDiagnostics.run()
 
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SnapRecorder-self-test-\(UUID().uuidString).mp4")
@@ -103,7 +105,7 @@ enum RecordingDiagnostics {
         )
         let voiceReport = try await validateVoiceExport()
         let voiceOnlyReport = try await validateVoiceOnlyExport()
-        return "Snap Recorder self-test passed: \(String(format: "%.2f", duration))s, \(Int(naturalSize.width))x\(Int(naturalSize.height)), \(fileSize) bytes; \(qualityReport); \(voiceReport); \(voiceOnlyReport)"
+        return "Snap Recorder self-test passed: \(String(format: "%.2f", duration))s, \(Int(naturalSize.width))x\(Int(naturalSize.height)), \(fileSize) bytes; \(qualityReport); \(voiceReport); \(voiceOnlyReport); \(cameraReport); \(portraitReport)"
     }
 
     private static func validateQualityChoiceExport(

@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.1</string>
+    <string>0.4.0</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>11</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
     <key>LSMinimumSystemVersion</key>
@@ -32,6 +32,8 @@
     <string>Snap Recorder 会把完成的录屏自动保存到“下载”文件夹。</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Snap Recorder 仅在你开启“人声”时使用麦克风，声音只保存在本机导出的录屏文件中。</string>
+    <key>NSCameraUsageDescription</key>
+    <string>仅在你开启“摄像头”时预览并录制人像，画面会叠入本机保存的视频，不会上传。</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
