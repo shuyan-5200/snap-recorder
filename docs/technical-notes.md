@@ -10,7 +10,7 @@
 
 `SCStream microphone output → 独立 AVAssetWriter → M4A`
 
-可选摄像头（0.4.0 本机开发）：
+可选摄像头（0.4.0）：
 
 `AVCaptureSession → AVCaptureVideoDataOutput → 可选本地自然修饰 → 已处理摄像头帧 → Core Image 画中画合成 → 同一 AVAssetWriter`
 

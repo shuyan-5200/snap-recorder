@@ -4,7 +4,7 @@ This document records reproducible project-level checks without retaining user r
 
 ## v0.4.0 build 11: discrete portrait presets and window dragging
 
-Local-only update. The reported continuous-slider gesture could move the entire window because the main window allowed background dragging. The shared main-window factory now disables background dragging while retaining native title-bar movement.
+Published release update. The reported continuous-slider gesture could move the entire window because the main window allowed background dragging. The shared main-window factory now disables background dragging while retaining native title-bar movement.
 
 The continuous slider is removed from the product. Portrait correction now offers Original / Natural / Soft, defaulting to Original. Natural and Soft use different edge-preserving noise-reduction thresholds and 60% / 85% processed-image blends over a wider inner-cheek mask; protected features and background remain excluded. An already smooth or motion-blurred face can still show only a subtle difference. No face warp, makeup, paid library, or network dependency was added.
 
@@ -15,6 +15,7 @@ Verification:
 - The same previously recorded local face frame was processed as Original, Natural, and Soft for side-by-side inspection. Changes stayed limited to cheeks; on this already soft sample, visible differences remained restrained. Pixel-level differences are not a guarantee of dramatic perceptual change.
 - No new live-camera recording was used to claim a complete build 11 hardware pass. The camera/encoding architecture is unchanged; the historical build 10 recording below is separate evidence, not a new test result.
 - The installed build 11 Universal App passed strict signature verification and the complete self-test. Its real settings UI selected Soft, Natural, and Original successfully, switched the camera overlay from bottom-right to top-left and back, and closed with Escape. The camera was turned off afterward and the main window left open. Temporary comparison media and the isolated test app were moved to macOS Trash; the source recording was left unchanged.
+- Public-release leakage checks confirmed that the v0.4.0 merge added no image, video, ZIP, DMG, or App files to the repository. The tracked media files are only the pre-existing product UI screenshots. The release ZIP contains the App bundle, executable, icon, Info.plist, and code-signature metadata; it contains no screenshots, recordings, or portrait test media. Local release asset SHA-256: `bd3f8cc9889708e52f932fb13c502bfbc1a74883d2360e9bf77e670ea7eb2d49`.
 
 ## v0.4.0 build 10: native portrait correction and position controls
 
@@ -73,7 +74,7 @@ swift build -c release
 .build/release/SnapRecorder --self-test
 ```
 
-The self-test uses generated frames and tones. It does not request screen, microphone, or camera permission and does not read user content. The release-configuration build and complete self-test passed, including a run from the installed v0.4.0 build 11 App. Generated camera frames verify rendering and media output; they cannot replace the remaining hardware checklist above. A release-configuration build is an optimized local binary, not a published GitHub release.
+The self-test uses generated frames and tones. It does not request screen, microphone, or camera permission and does not read user content. The release-configuration build and complete self-test passed, including a run from the installed v0.4.0 build 11 App. Generated camera frames verify rendering and media output; they cannot replace the remaining hardware checklist above.
 
 Current coverage:
 
