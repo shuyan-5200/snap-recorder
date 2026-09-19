@@ -43,8 +43,16 @@ final class AppModel: ObservableObject {
     @Published var completionNote: String?
     @Published var hasRetryableSave = false
     @Published var recoveryURLs: [URL] = []
-    @Published var selectedQualityPreset: RecordingQualityPreset = .maximum
-    @Published var selectedVoiceExportModes: Set<VoiceExportMode> = [.combined]
+    @Published var selectedQualityPreset: RecordingQualityPreset = .balanced
+    @Published var selectedExportTracks: Set<RecordingTrack> = [.video]
+    @Published var selectedExportArrangement: ExportArrangement = .merged
+
+    @Published var exportName = ""
+    @Published var customSizeMegabytes = "20"
+    @Published var exportInfo: RecordingExportInfo?
+    @Published var isCancellingExport = false
+    private var exportTask: Task<Void, Never>?
+    private var activeCapturesCamera = false
 
     private let captureService: ScreenCaptureService
     private unowned let windowCoordinator: WindowCoordinator
@@ -125,25 +133,98 @@ final class AppModel: ObservableObject {
         lastRecordingResult?.urls ?? []
     }
 
+    var isExportWorkspace: Bool { phase == .choosingExport || phase == .finished }
+
     var hasUnfinishedSave: Bool {
-        phase == .choosingExport || hasRetryableSave
+        (captureService.hasPendingRecording && lastOutputURLs.isEmpty) || hasRetryableSave
     }
 
     var exportButtonTitle: String {
-        if !activeCapturesMicrophone {
-            return selectedQualityPreset == .maximum
-                ? "导出最高画质"
-                : "导出清晰小体积"
+        lastOutputURLs.isEmpty ? "保存到下载" : "再导出一份"
+    }
+
+    var currentExportPlan: VideoExportPlan? {
+        guard let exportInfo, exportSelection.includesVideo else { return nil }
+        return try? ExportPlanning.plan(
+            sourceSize: exportInfo.size, duration: exportInfo.duration,
+            preset: selectedQualityPreset, customMegabytes: Double(customSizeMegabytes),
+            hasSystemAudio: exportSelection.includesSystemInVideo,
+            sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceBytes: exportInfo.sourceBytes,
+            includesCombinedVoice: exportSelection.includesVoiceInVideo
+        )
+    }
+
+    var exportValidationMessage: String? {
+        do {
+            _ = try ExportPlanning.validatedName(exportName, fallback: "录屏")
+            if let exportInfo {
+                try exportSelection.validate(available: exportInfo.availableTracks)
+                if exportSelection.includesVideo {
+                    _ = try ExportPlanning.plan(
+                        sourceSize: exportInfo.size, duration: exportInfo.duration,
+                        preset: selectedQualityPreset, customMegabytes: Double(customSizeMegabytes),
+                        hasSystemAudio: exportSelection.includesSystemInVideo,
+                        sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceBytes: exportInfo.sourceBytes,
+                        includesCombinedVoice: exportSelection.includesVoiceInVideo
+                    )
+                }
+            }
+            return nil
+        } catch { return error.localizedDescription.replacingOccurrences(of: "视频保存失败：", with: "") }
+    }
+
+    var canExport: Bool {
+        isExportWorkspace && exportInfo != nil && exportValidationMessage == nil
+    }
+
+    var exportEstimate: String {
+        guard let info = exportInfo, let plan = currentExportPlan else { return "" }
+        let size = "\(Int(plan.size.width)) × \(Int(plan.size.height)) · \(plan.frameRate) 帧"
+        if let limit = plan.byteLimit {
+            return "最高 \(size) · 每个视频 ≤ \(ExportPlanning.sizeText(Double(limit)))"
         }
-        switch selectedVoiceExportModes {
-        case []:
-            return "请至少选择一种"
-        case [.combined]:
-            return "导出完整视频"
-        case [.separate]:
-            return "导出 2 个分轨文件"
-        default:
-            return "导出全部 3 个文件"
+        let estimate = plan.estimatedBytesPerSecond * info.duration
+        if selectedQualityPreset == .maximum {
+            let voiceBytes = !exportSelection.includesSystemInVideo && exportSelection.includesVoiceInVideo
+                ? Double(plan.audioBitrate) / 8 * info.duration : 0
+            let upper = Double(info.sourceBytes) + voiceBytes
+            let lower = min(upper, estimate)
+            let text = upper - lower > 100_000
+                ? "\(ExportPlanning.sizeText(lower))–\(ExportPlanning.sizeText(upper))"
+                : ExportPlanning.sizeText(upper)
+            return "\(size) · 视频约 \(text)"
+        }
+        return "最高 \(size) · 视频约 \(ExportPlanning.sizeText(estimate))"
+    }
+
+    /// A generated fixture exercises the real export screen without capturing private media.
+    func prepareExportPreview() async {
+        guard RecordingDiagnostics.isExportPreview else { return }
+        phase = .preparingExport
+        do {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SnapRecorder-UI-\(UUID())")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let video = directory.appendingPathComponent("source.mp4")
+            let voice = directory.appendingPathComponent("microphone.m4a")
+            let system = directory.appendingPathComponent("system.m4a")
+            let videoWithAudio = directory.appendingPathComponent("source-audio.mp4")
+            try await ExportDiagnostics.makeFixture(at: video, seconds: 2)
+            try ExportDiagnostics.makeToneFile(at: voice, frequency: 880, seconds: 2)
+            try ExportDiagnostics.makeToneFile(at: system, frequency: 440, seconds: 2)
+            try await RecordingExporter.combine(videoURL: video, microphoneURL: system, outputURL: videoWithAudio)
+            try FileManager.default.removeItem(at: video)
+            try FileManager.default.removeItem(at: system)
+            try captureService.installPendingRecordingForSelfTest(
+                videoURL: videoWithAudio, microphoneURL: voice,
+                finalVideoURL: directory.appendingPathComponent("导出界面测试.mp4")
+            )
+            activeCapturesMicrophone = true
+            activeCapturesSystemAudio = true
+            exportName = "导出界面测试"
+            await applyStopOutcome(.awaitingExportChoice)
+        } catch {
+            errorMessage = error.localizedDescription
+            phase = .failed
         }
     }
 
@@ -299,8 +380,21 @@ final class AppModel: ObservableObject {
         windowCoordinator.showCameraPreview(frames: cameraService.frames, settings: cameraSettings)
     }
 
+    func closeExportSessionIfNeeded() -> Bool {
+        guard isExportWorkspace else { return true }
+        if hasUnfinishedSave {
+            let alert = NSAlert()
+            alert.messageText = "录制还没有保存"
+            alert.informativeText = "放弃后可在废纸篓中找回临时原片。"
+            alert.addButton(withTitle: "继续导出")
+            alert.addButton(withTitle: "放弃此次录制")
+            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        }
+        return endExportSession()
+    }
+
     func mainWindowClosed() {
-        if phase == .idle || phase == .failed || phase == .finished {
+        if phase == .idle || phase == .failed || phase == .finished || phase == .choosingExport {
             setCameraCaptureEnabled(false)
             windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
         }
@@ -460,44 +554,84 @@ final class AppModel: ObservableObject {
         Task { await performStopRecording() }
     }
 
-    func toggleVoiceExportMode(_ mode: VoiceExportMode) {
-        guard phase == .choosingExport else { return }
-        if selectedVoiceExportModes.contains(mode) {
-            selectedVoiceExportModes.remove(mode)
-        } else {
-            selectedVoiceExportModes.insert(mode)
-        }
+    var exportSelection: RecordingExportSelection {
+        RecordingExportSelection(tracks: selectedExportTracks, arrangement: selectedExportArrangement)
+    }
+
+    func toggleExportTrack(_ track: RecordingTrack) {
+        guard isExportWorkspace, exportInfo?.availableTracks.contains(track) == true else { return }
+        if selectedExportTracks.contains(track) { selectedExportTracks.remove(track) }
+        else { selectedExportTracks.insert(track) }
         errorMessage = nil
     }
 
     func exportRecording() {
-        guard phase == .choosingExport,
-              !activeCapturesMicrophone || !selectedVoiceExportModes.isEmpty else { return }
-        let qualityPreset = selectedQualityPreset
-        let modes = selectedVoiceExportModes
+        guard canExport else { return }
+        let preset = selectedQualityPreset
+        let selection = exportSelection
+        let name = exportName
+        let megabytes = Double(customSizeMegabytes)
         errorMessage = nil
+        isCancellingExport = false
         phase = .exporting
-        Task { await performExport(qualityPreset: qualityPreset, modes: modes) }
+        exportTask = Task {
+            await performExport(qualityPreset: preset, selection: selection, name: name, customMegabytes: megabytes)
+        }
+    }
+
+    func cancelExport() {
+        guard phase == .exporting else { return }
+        isCancellingExport = true
+        exportTask?.cancel()
     }
 
     func retrySavingRecording() {
         Task { await performRetrySaving() }
     }
 
-    func recordAgain() {
-        guard !hasRetryableSave else { return }
+    @discardableResult
+    func endExportSession() -> Bool {
+        guard phase != .exporting, phase != .preparingExport, phase != .countdown, !phase.isCapturing else { return false }
+        do {
+            try captureService.discardPendingRecording(moveToTrash: lastOutputURLs.isEmpty)
+        } catch {
+            errorMessage = "临时录制未能清理：\(error.localizedDescription)"
+            return false
+        }
         completionNote = nil
         errorMessage = nil
         lastRecordingResult = nil
+        hasRetryableSave = false
         recoveryURLs = []
-        selectedQualityPreset = .maximum
-        selectedVoiceExportModes = [.combined]
+        exportInfo = nil
+        selectedQualityPreset = .balanced
+        selectedExportTracks = [.video]
+        selectedExportArrangement = .merged
         isRegionSelectionLocked = false
         phase = .idle
+        return true
+    }
+
+    func recordAgain() {
+        guard endExportSession() else { return }
         if mode == .browser {
             Task { await refreshBrowserWindows() }
         } else if mode == .region {
             captureModeDidChange(.region)
+        }
+    }
+
+    func restartRecording() {
+        let restoreCamera = activeCapturesCamera
+        guard endExportSession() else { return }
+        Task {
+            if mode == .browser { await refreshBrowserWindows() }
+            if mode == .region { captureModeDidChange(.region) }
+            if restoreCamera {
+                setCameraCaptureEnabled(true)
+                await cameraOperation?.value
+            }
+            await performStartRecording()
         }
     }
 
@@ -530,14 +664,17 @@ final class AppModel: ObservableObject {
             lastRecordingResult = nil
             hasRetryableSave = false
             recoveryURLs = []
-            selectedQualityPreset = .maximum
-            selectedVoiceExportModes = [.combined]
+            selectedQualityPreset = .balanced
+            selectedExportTracks = [.video]
+            selectedExportArrangement = .merged
 
+            activeCapturesCamera = capturesCamera
             activeCapturesSystemAudio = capturesSystemAudio
             activeCapturesMicrophone = capturesMicrophone
             cameraFailureDuringCountdown = nil
 
             let outputURL = try makeOutputURL()
+            exportName = outputURL.deletingPathExtension().lastPathComponent
             let targetProcessID = mode == .browser ? selectedBrowserWindow?.processID : nil
             let request = CaptureRequest(
                 mode: mode,
@@ -554,18 +691,23 @@ final class AppModel: ObservableObject {
             )
 
             phase = .countdown
+            // Resolve the main panel before hiding it; keep this window identity
+            // as the sole exception to the application's capture exclusion.
+            let mainPanel = mode == .browser ? nil : try await captureService.capturableMainWindow(
+                windowID: windowCoordinator.mainWindowID
+            )
             windowCoordinator.prepareForCountdown(targetProcessID: targetProcessID)
             await windowCoordinator.runCountdown(from: 3)
             try await Task.sleep(for: .milliseconds(120))
             if let failure = cameraFailureDuringCountdown {
                 throw CaptureError.couldNotStartWriter(failure)
             }
-            try await captureService.start(request, cameraFrames: capturesCamera ? cameraService.frames : nil)
+            try await captureService.start(request, cameraFrames: capturesCamera ? cameraService.frames : nil, mainPanel: mainPanel)
             if let failure = cameraFailureDuringCountdown {
                 let outcome = try await captureService.stop()
                 await releaseCamera()
                 completionNote = "摄像头已停止，已保留录到的内容。\(failure)"
-                applyStopOutcome(outcome)
+                await applyStopOutcome(outcome)
                 windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
                 windowCoordinator.showMainWindow()
                 return
@@ -660,7 +802,7 @@ final class AppModel: ObservableObject {
         do {
             let outcome = try await captureService.stop()
             await releaseCamera()
-            applyStopOutcome(outcome)
+            await applyStopOutcome(outcome)
         } catch {
             await releaseCamera()
             errorMessage = error.localizedDescription
@@ -693,7 +835,7 @@ final class AppModel: ObservableObject {
             completionNote = "录制来源已停止，已尽力保存此前内容。\(error.localizedDescription)"
             let outcome = try await captureService.stop()
             await releaseCamera()
-            applyStopOutcome(outcome)
+            await applyStopOutcome(outcome)
         } catch {
             await releaseCamera()
             errorMessage = CaptureError.streamStopped(error.localizedDescription).localizedDescription
@@ -704,38 +846,50 @@ final class AppModel: ObservableObject {
         windowCoordinator.showMainWindow()
     }
 
-    private func applyStopOutcome(_ outcome: CaptureStopOutcome) {
+    private func applyStopOutcome(_ outcome: CaptureStopOutcome) async {
         switch outcome {
         case .exported(let result):
             lastRecordingResult = result
             phase = .finished
         case .awaitingExportChoice:
-            selectedQualityPreset = .maximum
-            selectedVoiceExportModes = [.combined]
+            selectedQualityPreset = .balanced
+            selectedExportTracks = [.video]
+            selectedExportArrangement = .merged
+            do {
+                exportInfo = try await captureService.pendingExportInfo()
+                selectedExportTracks = exportInfo?.availableTracks ?? [.video]
+                selectedExportArrangement = selectedExportTracks.contains(.voice) ? .separate : .merged
+            }
+            catch { errorMessage = error.localizedDescription }
             phase = .choosingExport
         }
     }
 
     private func performExport(
         qualityPreset: RecordingQualityPreset,
-        modes: Set<VoiceExportMode>
+        selection: RecordingExportSelection,
+        name: String,
+        customMegabytes: Double?
     ) async {
-        guard phase == .exporting,
-              !activeCapturesMicrophone || !modes.isEmpty else { return }
+        guard phase == .exporting else { return }
 
         do {
             let result = try await captureService.exportPendingRecording(
                 qualityPreset: qualityPreset,
-                modes: modes
+                selection: selection,
+                name: name,
+                customMegabytes: customMegabytes
             )
-            lastRecordingResult = result
+            lastRecordingResult = RecordingResult(urls: lastOutputURLs + result.urls)
             recoveryURLs = []
             phase = .finished
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error is CancellationError ? nil : error.localizedDescription
             recoveryURLs = captureService.recoveryURLs
-            phase = .choosingExport
+            phase = lastOutputURLs.isEmpty ? .choosingExport : .finished
         }
+        isCancellingExport = false
+        exportTask = nil
     }
 
     private func performRetrySaving() async {

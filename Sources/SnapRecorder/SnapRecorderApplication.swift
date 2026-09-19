@@ -41,6 +41,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--self-test-window-capture") {
+            Task {
+                do {
+                    print(try await CaptureWindowDiagnostics.run())
+                    Darwin.exit(0)
+                } catch {
+                    fputs("Window capture test failed: \(error.localizedDescription)\n", stderr)
+                    Darwin.exit(1)
+                }
+            }
+            return
+        }
         let coordinator = WindowCoordinator(
             initialExternalApplication: previouslyActiveApplication
         )
@@ -53,6 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.windowCoordinator = coordinator
         self.model = model
         coordinator.showMainWindow()
+        if RecordingDiagnostics.isExportPreview {
+            Task { await model.prepareExportPreview() }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -70,9 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model else { return true }
 
         switch model.phase {
-        case .idle, .preparingExport, .choosingExport, .exporting, .finished, .failed:
+        case .idle, .preparingExport, .choosingExport, .exporting, .finished, .failed, .recording, .paused:
             windowCoordinator?.showMainWindow()
-        case .countdown, .recording, .paused:
+        case .countdown:
             break
         }
         return true
@@ -93,9 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if model.phase.isCapturing {
             let alert = NSAlert()
             alert.messageText = "录屏还在进行"
-            alert.informativeText = "请先结束并保存，避免丢失已经录下的内容。"
+            alert.informativeText = "先结束录制，再选择保存或放弃。"
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "结束并保存")
+            alert.addButton(withTitle: "结束录制")
             alert.addButton(withTitle: "继续录制")
             if alert.runModal() == .alertFirstButtonReturn {
                 model.stopRecording()
@@ -103,14 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateCancel
         }
 
-        if model.phase == .choosingExport {
-            let alert = NSAlert()
-            alert.messageText = "录制还没有导出"
-            alert.informativeText = "请选择导出画质并完成保存，避免丢失已经录好的内容。"
-            alert.addButton(withTitle: "继续导出")
-            alert.runModal()
-            windowCoordinator?.showMainWindow()
-            return .terminateCancel
+        if model.isExportWorkspace {
+            return model.closeExportSessionIfNeeded() ? .terminateNow : .terminateCancel
         }
 
         if model.hasRetryableSave {
@@ -128,8 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if model.phase == .preparingExport || model.phase == .exporting {
             let alert = NSAlert()
-            alert.messageText = "正在生成视频"
-            alert.informativeText = "保存完成后再退出，录屏就不会丢失。"
+            alert.messageText = "正在导出"
+            alert.informativeText = "请先完成或取消导出。"
             alert.addButton(withTitle: "知道了")
             alert.runModal()
             return .terminateCancel

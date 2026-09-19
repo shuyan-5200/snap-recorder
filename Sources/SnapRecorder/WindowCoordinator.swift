@@ -57,6 +57,11 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         createStatusItemIfNeeded()
     }
 
+    var mainWindowID: CGWindowID? {
+        guard let mainWindow, mainWindow.windowNumber > 0 else { return nil }
+        return CGWindowID(mainWindow.windowNumber)
+    }
+
     func showMainWindow() {
         guard let model else { return }
         let window: NSWindow
@@ -98,7 +103,9 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.isMovable = true
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
-        window.sharingType = .none
+        // The main panel is ordinary, shareable content. Auxiliary windows stay
+        // excluded by the capture filter, including ones created after capture starts.
+        window.sharingType = .readOnly
         return window
     }
 
@@ -196,6 +203,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func showRecordingHUD() {
         guard let model else { return }
+        statusItem?.isVisible = true
         let panel: NSPanel
 
         if let recordingPanel {
@@ -240,6 +248,11 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func hideCameraPreview() {
         cameraPreview.hide()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === mainWindow else { return true }
+        return model?.closeExportSessionIfNeeded() ?? true
     }
 
     func windowWillClose(_ notification: Notification) {

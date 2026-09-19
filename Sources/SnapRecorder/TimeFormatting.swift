@@ -40,6 +40,11 @@ enum TimeFormatting {
         )
     }
 
+    static func audioOutputURL(matching videoURL: URL, title: String) -> URL {
+        siblingOutputURL(matching: videoURL, replacingPrefixes: ["Snap 录屏 ", "Snap 视频 "],
+                         with: "Snap \(title) ", pathExtension: "m4a", fallbackSuffix: title)
+    }
+
     private static func siblingOutputURL(
         matching sourceURL: URL,
         replacingPrefixes: [String],

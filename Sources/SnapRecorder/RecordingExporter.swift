@@ -3,10 +3,20 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
+// AVAssetExportSession supports cancellation from another thread. Only that
+// operation crosses the cancellation-handler boundary; export remains sequential.
+private final class ExportCancellation: @unchecked Sendable {
+    let session: AVAssetExportSession
+    init(_ session: AVAssetExportSession) { self.session = session }
+    func cancel() { session.cancelExport() }
+}
+
 enum RecordingExporter {
     static func compressVideo(
         sourceURL: URL,
-        outputURL: URL
+        outputURL: URL,
+        plan: VideoExportPlan,
+        includesAudio: Bool = true
     ) async throws {
         let fileManager = FileManager.default
         try? fileManager.removeItem(at: outputURL)
@@ -22,31 +32,48 @@ enum RecordingExporter {
         }
 
         let naturalSize = try await sourceVideoTrack.load(.naturalSize)
-        let outputSize = CGSize(
-            width: abs(naturalSize.width),
-            height: abs(naturalSize.height)
-        )
-        guard outputSize.width > 0, outputSize.height > 0 else {
-            throw CaptureError.couldNotFinishWriter("待压缩视频尺寸无效。")
-        }
+        let transform = try await sourceVideoTrack.load(.preferredTransform)
+        let sourceBounds = CGRect(origin: .zero, size: naturalSize).applying(transform)
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = plan.size
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(plan.frameRate))
+        videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+        videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+        videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
+        let fittedTransform = transform
+            .concatenating(CGAffineTransform(translationX: -sourceBounds.minX, y: -sourceBounds.minY))
+            .concatenating(CGAffineTransform(scaleX: plan.size.width / sourceBounds.width,
+                                            y: plan.size.height / sourceBounds.height))
+        layer.setTransform(fittedTransform, at: .zero)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
+        instruction.layerInstructions = [layer]
+        videoComposition.instructions = [instruction]
 
         let reader = try AVAssetReader(asset: asset)
         reader.timeRange = CMTimeRange(start: .zero, duration: duration)
-        let videoOutput = AVAssetReaderTrackOutput(
-            track: sourceVideoTrack,
-            outputSettings: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-            ]
+        let videoOutput = AVAssetReaderVideoCompositionOutput(
+            videoTracks: [sourceVideoTrack],
+            videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         )
+        videoOutput.videoComposition = videoComposition
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else {
             throw CaptureError.couldNotFinishWriter("无法解码待压缩的画面。")
         }
         reader.add(videoOutput)
 
-        let sourceAudioTrack = try await asset.loadTracks(withMediaType: .audio).first
+        let sourceAudioTrack = includesAudio ? try await asset.loadTracks(withMediaType: .audio).first : nil
         let audioOutput = sourceAudioTrack.map {
-            AVAssetReaderTrackOutput(track: $0, outputSettings: nil)
+            AVAssetReaderTrackOutput(track: $0, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 48_000,
+                AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ])
         }
         if let audioOutput {
             audioOutput.alwaysCopiesSampleData = false
@@ -58,15 +85,13 @@ enum RecordingExporter {
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
-        let qualitySettings = RecordingQuality.videoSettings(
-            for: outputSize,
-            preset: .compact,
-            prioritizesQuality: true
+        let qualitySettings = RecordingQuality.settings(
+            size: plan.size, bitrate: plan.videoBitrate, frameRate: plan.frameRate,
+            reordersFrames: true, prioritizesQuality: true, limitsDataRate: true
         )
-        let baseSettings = RecordingQuality.videoSettings(
-            for: outputSize,
-            preset: .compact,
-            prioritizesQuality: false
+        let baseSettings = RecordingQuality.settings(
+            size: plan.size, bitrate: plan.videoBitrate, frameRate: plan.frameRate,
+            reordersFrames: true, prioritizesQuality: false, limitsDataRate: true
         )
         let videoSettings = writer.canApply(
             outputSettings: qualitySettings,
@@ -81,19 +106,21 @@ enum RecordingExporter {
             outputSettings: videoSettings
         )
         videoInput.expectsMediaDataInRealTime = false
-        videoInput.transform = try await sourceVideoTrack.load(.preferredTransform)
         guard writer.canAdd(videoInput) else {
             throw CaptureError.couldNotFinishWriter("无法创建小体积视频轨道。")
         }
         writer.add(videoInput)
 
         var audioInput: AVAssetWriterInput?
-        if let sourceAudioTrack {
-            let descriptions = try await sourceAudioTrack.load(.formatDescriptions)
+        if sourceAudioTrack != nil {
             let input = AVAssetWriterInput(
                 mediaType: .audio,
-                outputSettings: nil,
-                sourceFormatHint: descriptions.first
+                outputSettings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: 48_000,
+                    AVNumberOfChannelsKey: 2,
+                    AVEncoderBitRateKey: max(64_000, plan.audioBitrate)
+                ]
             )
             input.expectsMediaDataInRealTime = false
             guard writer.canAdd(input) else {
@@ -168,23 +195,106 @@ enum RecordingExporter {
         }
     }
 
-    static func alignVoice(
-        microphoneURL: URL,
+    /// Reject a nominally smaller high-quality export if sampled decoded frames lose too much detail.
+    /// This is an objective guard, not a claim of perceptually lossless compression.
+    static func preservesHighQuality(sourceURL: URL, candidateURL: URL, duration: Double) async throws -> Bool {
+        let source = AVAssetImageGenerator(asset: AVURLAsset(url: sourceURL))
+        let candidate = AVAssetImageGenerator(asset: AVURLAsset(url: candidateURL))
+        for generator in [source, candidate] {
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceBefore = .positiveInfinity
+            generator.requestedTimeToleranceAfter = .zero
+        }
+        for fraction in [0.2, 0.5, 0.8] {
+            try Task.checkCancellation()
+            let time = CMTime(seconds: duration * fraction, preferredTimescale: 600)
+            let originalFrame = try await source.image(at: time)
+            let original = originalFrame.image
+            let alignedSeconds = ceil(max(0, originalFrame.actualTime.seconds * 60 - 0.00001)) / 60
+            candidate.requestedTimeToleranceBefore = .zero
+            candidate.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 60)
+            let encoded = try await candidate.image(at: CMTime(seconds: alignedSeconds, preferredTimescale: 600)).image
+            let width = original.width, height = original.height
+            guard width == encoded.width, height == encoded.height else { return false }
+            func bytes(_ image: CGImage) -> [UInt8] {
+                var output = [UInt8](repeating: 0, count: width * height * 4)
+                output.withUnsafeMutableBytes { buffer in
+                    let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                }
+                return output
+            }
+            let a = bytes(original), b = bytes(encoded)
+            var squaredError = 0.0
+            for i in stride(from: 0, to: a.count, by: 4) {
+                for channel in 0..<3 {
+                    let delta = Double(a[i + channel]) - Double(b[i + channel])
+                    squaredError += delta * delta
+                }
+            }
+            let mse = squaredError / Double(width * height * 3)
+            let psnr = 10 * log10(255 * 255 / max(mse, 0.0001))
+            if psnr < 32 { return false }
+        }
+        return true
+    }
+
+    static func alignVoice(microphoneURL: URL, matchingVideoURL: URL, outputURL: URL) async throws {
+        try await alignAudio(sourceURL: microphoneURL, matchingVideoURL: matchingVideoURL, outputURL: outputURL)
+    }
+
+    static func copyVideoOnly(sourceURL: URL, outputURL: URL) async throws {
+        let asset = AVURLAsset(url: sourceURL)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw CaptureError.couldNotFinishWriter("没有视频画面。")
+        }
+        let composition = AVMutableComposition()
+        let duration = try await asset.load(.duration)
+        composition.insertEmptyTimeRange(CMTimeRange(start: .zero, duration: duration))
+        guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            throw CaptureError.couldNotFinishWriter("无法创建视频文件。")
+        }
+        try video.insertTimeRange(try await track.load(.timeRange), of: track, at: .zero)
+        video.preferredTransform = try await track.load(.preferredTransform)
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+            throw CaptureError.couldNotFinishWriter("无法单独导出视频。")
+        }
+        session.outputURL = outputURL
+        session.outputFileType = .mp4
+        session.shouldOptimizeForNetworkUse = true
+        try Task.checkCancellation()
+        let cancellation = ExportCancellation(session)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                session.exportAsynchronously { continuation.resume() }
+            }
+        } onCancel: { cancellation.cancel() }
+        try Task.checkCancellation()
+        guard session.status == .completed else {
+            throw CaptureError.couldNotFinishWriter(session.error?.localizedDescription ?? "视频导出未完成。")
+        }
+    }
+
+    static func alignAudio(
+        sourceURL: URL,
         matchingVideoURL: URL,
-        outputURL: URL
+        outputURL: URL,
+        channels: Int = 1
     ) async throws {
         let fileManager = FileManager.default
         try? fileManager.removeItem(at: outputURL)
 
         let videoAsset = AVURLAsset(url: matchingVideoURL)
         let targetDuration = try await videoAsset.load(.duration)
-        let microphoneAsset = AVURLAsset(url: microphoneURL)
+        let microphoneAsset = AVURLAsset(url: sourceURL)
         guard targetDuration.isValid,
               targetDuration.isNumeric,
               CMTimeCompare(targetDuration, .zero) > 0,
               let microphoneTrack = try await microphoneAsset
                 .loadTracks(withMediaType: .audio).first else {
-            throw CaptureError.couldNotFinishWriter("无法读取待对齐的人声文件。")
+            throw CaptureError.couldNotFinishWriter("无法读取待对齐的音频文件。")
         }
 
         let reader = try AVAssetReader(asset: microphoneAsset)
@@ -194,7 +304,7 @@ enum RecordingExporter {
             outputSettings: [
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVSampleRateKey: 48_000,
-                AVNumberOfChannelsKey: 1,
+                AVNumberOfChannelsKey: channels,
                 AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsNonInterleaved: false
@@ -202,15 +312,24 @@ enum RecordingExporter {
         )
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else {
-            throw CaptureError.couldNotFinishWriter("无法解码人声音轨。")
+            throw CaptureError.couldNotFinishWriter("无法解码音频音轨。")
         }
         reader.add(output)
 
+        try writeAlignedAudio(reader: reader, output: output, targetDuration: targetDuration,
+                              channels: channels, outputURL: outputURL)
+    }
+
+    private static func writeAlignedAudio(
+        reader: AVAssetReader, output: AVAssetReaderOutput, targetDuration: CMTime,
+        channels: Int, outputURL: URL
+    ) throws {
+        let fileManager = FileManager.default
         let sampleRate = 48_000.0
         let targetFrameCount = max(1, Int((targetDuration.seconds * sampleRate).rounded()))
         guard reader.startReading() else {
             throw CaptureError.couldNotFinishWriter(
-                reader.error?.localizedDescription ?? "无法开始读取人声。"
+                reader.error?.localizedDescription ?? "无法开始读取音频。"
             )
         }
 
@@ -221,7 +340,7 @@ enum RecordingExporter {
                     settings: [
                         AVFormatIDKey: kAudioFormatMPEG4AAC,
                         AVSampleRateKey: sampleRate,
-                        AVNumberOfChannelsKey: 1,
+                        AVNumberOfChannelsKey: channels,
                         AVEncoderBitRateKey: 192_000,
                         AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
                     ],
@@ -232,6 +351,7 @@ enum RecordingExporter {
                 var writtenFrames = 0
 
                 while let sampleBuffer = output.copyNextSampleBuffer() {
+                    try Task.checkCancellation()
                     let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                     let sampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
                     guard presentationTime.isValid,
@@ -270,17 +390,17 @@ enum RecordingExporter {
                         pcmFormat: processingFormat,
                         frameCapacity: AVAudioFrameCount(frameCount)
                     ), let destination = pcmBuffer.int16ChannelData?[0] else {
-                        throw CaptureError.couldNotFinishWriter("无法创建人声 PCM 缓冲区。")
+                        throw CaptureError.couldNotFinishWriter("无法创建音频 PCM 缓冲区。")
                     }
                     pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
                     let copyStatus = CMBlockBufferCopyDataBytes(
                         dataBuffer,
-                        atOffset: sourceOffset * MemoryLayout<Int16>.size,
-                        dataLength: frameCount * MemoryLayout<Int16>.size,
+                        atOffset: sourceOffset * channels * MemoryLayout<Int16>.size,
+                        dataLength: frameCount * channels * MemoryLayout<Int16>.size,
                         destination: destination
                     )
                     guard copyStatus == kCMBlockBufferNoErr else {
-                        throw CaptureError.couldNotFinishWriter("无法读取人声 PCM 数据。")
+                        throw CaptureError.couldNotFinishWriter("无法读取音频 PCM 数据。")
                     }
                     try audioFile.write(from: pcmBuffer)
                     writtenFrames += frameCount
@@ -288,7 +408,7 @@ enum RecordingExporter {
 
                 guard reader.status == .completed else {
                     throw CaptureError.couldNotFinishWriter(
-                        reader.error?.localizedDescription ?? "读取人声时中断。"
+                        reader.error?.localizedDescription ?? "读取音频时中断。"
                     )
                 }
                 if writtenFrames < targetFrameCount {
@@ -300,7 +420,7 @@ enum RecordingExporter {
                     writtenFrames = targetFrameCount
                 }
                 guard writtenFrames == targetFrameCount else {
-                    throw CaptureError.couldNotFinishWriter("人声帧数没有与视频对齐。")
+                    throw CaptureError.couldNotFinishWriter("音频帧数没有与视频对齐。")
                 }
             }
         } catch {
@@ -313,7 +433,10 @@ enum RecordingExporter {
     static func combine(
         videoURL: URL,
         microphoneURL: URL,
-        outputURL: URL
+        outputURL: URL,
+        audioBitrate: Int = 192_000,
+        includesSystemAudio: Bool = true,
+        includesVideo: Bool = true
     ) async throws {
         let fileManager = FileManager.default
         try? fileManager.removeItem(at: outputURL)
@@ -354,7 +477,7 @@ enum RecordingExporter {
         var compositionAudioTracks: [AVMutableCompositionTrack] = []
         var audioMixParameters: [AVAudioMixInputParameters] = []
 
-        if let sourceSystemTrack = try await videoAsset.loadTracks(withMediaType: .audio).first,
+        if includesSystemAudio, let sourceSystemTrack = try await videoAsset.loadTracks(withMediaType: .audio).first,
            let compositionSystemTrack = composition.addMutableTrack(
                withMediaType: .audio,
                preferredTrackID: kCMPersistentTrackID_Invalid
@@ -401,7 +524,7 @@ enum RecordingExporter {
         guard reader.canAdd(videoOutput) else {
             throw CaptureError.couldNotFinishWriter("无法读取原始高清视频轨道。")
         }
-        reader.add(videoOutput)
+        if includesVideo { reader.add(videoOutput) }
 
         let audioOutput = AVAssetReaderAudioMixOutput(
             audioTracks: compositionAudioTracks,
@@ -409,8 +532,8 @@ enum RecordingExporter {
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVSampleRateKey: 48_000,
                 AVNumberOfChannelsKey: 2,
-                AVLinearPCMBitDepthKey: 32,
-                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsNonInterleaved: false
             ]
         )
@@ -422,6 +545,13 @@ enum RecordingExporter {
             throw CaptureError.couldNotFinishWriter("无法读取待混合的声音轨道。")
         }
         reader.add(audioOutput)
+        if !includesVideo {
+            // Audio-only assets need explicit head/tail silence: an empty video
+            // track does not extend the decoded audio timeline in an M4A writer.
+            try writeAlignedAudio(reader: reader, output: audioOutput,
+                                  targetDuration: videoDuration, channels: 2, outputURL: outputURL)
+            return
+        }
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
@@ -440,16 +570,16 @@ enum RecordingExporter {
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
                 AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 256_000,
+                AVEncoderBitRateKey: audioBitrate,
                 AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
             ]
         )
         audioInput.expectsMediaDataInRealTime = false
 
-        guard writer.canAdd(videoInput), writer.canAdd(audioInput) else {
+        guard (!includesVideo || writer.canAdd(videoInput)), writer.canAdd(audioInput) else {
             throw CaptureError.couldNotFinishWriter("无法创建合并后的音视频轨道。")
         }
-        writer.add(videoInput)
+        if includesVideo { writer.add(videoInput) }
         writer.add(audioInput)
 
         guard writer.startWriting() else {
@@ -466,21 +596,15 @@ enum RecordingExporter {
         writer.startSession(atSourceTime: .zero)
 
         do {
-            async let videoPump: Void = pump(
-                output: videoOutput,
-                input: videoInput,
-                reader: reader,
-                writer: writer,
-                label: "画面"
-            )
-            async let audioPump: Void = pump(
-                output: audioOutput,
-                input: audioInput,
-                reader: reader,
-                writer: writer,
-                label: "声音"
-            )
-            _ = try await (videoPump, audioPump)
+            if includesVideo {
+                async let videoPump: Void = pump(output: videoOutput, input: videoInput,
+                                                  reader: reader, writer: writer, label: "画面")
+                async let audioPump: Void = pump(output: audioOutput, input: audioInput,
+                                                  reader: reader, writer: writer, label: "声音")
+                _ = try await (videoPump, audioPump)
+            } else {
+                try await pump(output: audioOutput, input: audioInput, reader: reader, writer: writer, label: "声音")
+            }
 
             guard reader.status == .completed else {
                 throw CaptureError.couldNotFinishWriter(
@@ -515,12 +639,13 @@ enum RecordingExporter {
         label: String
     ) async throws {
         while true {
+            try Task.checkCancellation()
             if reader.status == .failed {
                 throw CaptureError.couldNotFinishWriter(
                     reader.error?.localizedDescription ?? "读取\(label)时中断。"
                 )
             }
-            if writer.status == .failed {
+            if writer.status == .failed || writer.status == .cancelled {
                 throw CaptureError.couldNotFinishWriter(
                     writer.error?.localizedDescription ?? "写入\(label)时中断。"
                 )
@@ -549,6 +674,7 @@ enum RecordingExporter {
     ) throws {
         var remainingFrames = frameCount
         while remainingFrames > 0 {
+            try Task.checkCancellation()
             let chunkSize = min(8_192, remainingFrames)
             guard let buffer = AVAudioPCMBuffer(
                 pcmFormat: format,
@@ -557,7 +683,7 @@ enum RecordingExporter {
                 throw CaptureError.couldNotFinishWriter("无法创建静音缓冲区。")
             }
             buffer.frameLength = AVAudioFrameCount(chunkSize)
-            samples.initialize(repeating: 0, count: chunkSize)
+            samples.initialize(repeating: 0, count: chunkSize * Int(format.channelCount))
             try audioFile.write(from: buffer)
             remainingFrames -= chunkSize
         }
