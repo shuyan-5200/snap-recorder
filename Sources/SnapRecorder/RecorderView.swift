@@ -39,7 +39,7 @@ struct RecorderView: View {
                 }
             }
         }
-        .frame(width: 560, height: model.mode == .region ? 730 : 584)
+        .frame(width: 560, height: model.isExportWorkspace ? exportWorkspaceHeight : (model.mode == .region ? 730 : 584))
         .preferredColorScheme(.dark)
         .onAppear {
             if model.permissionGranted {
@@ -67,6 +67,16 @@ struct RecorderView: View {
         }
     }
 
+    private var exportWorkspaceHeight: CGFloat {
+        var height: CGFloat = 550
+        if !model.lastOutputURLs.isEmpty { height += 120 }
+        if model.exportSelection.includesVideo && model.selectedQualityPreset == .custom { height += 36 }
+        if !model.exportSelection.includesVideo { height -= 130 }
+        if model.errorMessage != nil || model.exportValidationMessage != nil { height += 44 }
+        if model.completionNote != nil { height += 44 }
+        return min(780, height)
+    }
+
     @ViewBuilder
     private var content: some View {
         switch model.phase {
@@ -78,10 +88,8 @@ struct RecorderView: View {
             }
         case .preparingExport, .exporting:
             exportingView
-        case .choosingExport:
+        case .choosingExport, .finished:
             exportChoiceView
-        case .finished:
-            finishedView
         case .failed:
             failedView
         }
@@ -171,7 +179,7 @@ struct RecorderView: View {
             }
 
             Spacer()
-            Text("Snap Recorder 不上传录屏，也不会录入自己的控制界面")
+            Text("视频只保存在本机，录制浮窗不会进入成片")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
         }
@@ -671,229 +679,189 @@ struct RecorderView: View {
             ProgressView()
                 .controlSize(.large)
                 .padding(.bottom, 18)
-            Text(model.phase == .preparingExport ? "正在整理录制…" : "正在生成视频…")
+            Text(model.phase == .preparingExport ? "正在整理录制…" : "正在导出…")
                 .font(.system(size: 21, weight: .semibold))
-            Text("完成后会自动保存到“下载”")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .padding(.top, 7)
+            if model.phase == .exporting {
+                Button(model.isCancellingExport ? "正在取消…" : "取消导出") {
+                    model.cancelExport()
+                }
+                .buttonStyle(.link)
+                .disabled(model.isCancellingExport)
+                .padding(.top, 18)
+            }
             Spacer()
         }
     }
 
     private var exportChoiceView: some View {
-        VStack(spacing: 0) {
-            header
-            Spacer()
-
-            Text("选择导出画质")
-                .font(.system(size: 22, weight: .semibold))
-            Text("录制原片已保留，选择这次要生成的版本")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .padding(.top, 6)
-
-            HStack(spacing: 10) {
-                ForEach(RecordingQualityPreset.allCases) { preset in
-                    Button {
-                        model.selectedQualityPreset = preset
-                    } label: {
-                        qualityChoiceLabel(
-                            preset: preset,
-                            isSelected: model.selectedQualityPreset == preset
-                        )
-                    }
-                    .buttonStyle(
-                        SnapExportChoiceButtonStyle(
-                            isSelected: model.selectedQualityPreset == preset
-                        )
-                    )
-                }
-            }
-            .padding(.top, 18)
-
-            if model.activeCapturesMicrophone {
-                Text("人声文件")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 14)
-
-                VStack(spacing: 8) {
-                    Button {
-                        model.toggleVoiceExportMode(.combined)
-                    } label: {
-                        exportChoiceLabel(
-                            title: "完整视频",
-                            detail: model.activeCapturesSystemAudio
-                                ? "画面、电脑声音和人声合成 1 个 MP4"
-                                : "画面和人声合成 1 个 MP4",
-                            icon: "rectangle.stack.badge.play.fill",
-                            isSelected: model.selectedVoiceExportModes.contains(.combined)
-                        )
-                    }
-                    .buttonStyle(
-                        SnapExportChoiceButtonStyle(
-                            isSelected: model.selectedVoiceExportModes.contains(.combined)
-                        )
-                    )
-
-                    Button {
-                        model.toggleVoiceExportMode(.separate)
-                    } label: {
-                        exportChoiceLabel(
-                            title: "视频和人声分轨",
-                            detail: model.activeCapturesSystemAudio
-                                ? "视频保留电脑声音，另存清晰人声 M4A"
-                                : "无声视频 MP4 + 清晰人声 M4A",
-                            icon: "square.split.2x1.fill",
-                            isSelected: model.selectedVoiceExportModes.contains(.separate)
-                        )
-                    }
-                    .buttonStyle(
-                        SnapExportChoiceButtonStyle(
-                            isSelected: model.selectedVoiceExportModes.contains(.separate)
-                        )
-                    )
-                }
-            }
-
-            Button {
-                model.exportRecording()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.down.fill")
-                    Text(model.exportButtonTitle)
-                }
-            }
-            .buttonStyle(SnapPrimaryButtonStyle())
-            .disabled(
-                model.activeCapturesMicrophone
-                    && model.selectedVoiceExportModes.isEmpty
-            )
-            .padding(.top, 15)
-
-            if let errorMessage = model.errorMessage {
-                VStack(spacing: 4) {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.orange)
-                        .lineLimit(2)
-                    if !model.recoveryURLs.isEmpty {
-                        Button("查看恢复文件") {
-                            model.revealRecoveryFiles()
-                        }
-                        .buttonStyle(.link)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.top, 10)
-            } else {
-                Text(model.selectedQualityPreset.detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 11)
-            }
-
-            Spacer()
-        }
-    }
-
-    private func qualityChoiceLabel(
-        preset: RecordingQualityPreset,
-        isSelected: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Image(systemName: preset == .maximum ? "sparkles.tv" : "arrow.down.right.circle")
-                    .font(.system(size: 18, weight: .medium))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("导出录制")
+                    .font(.system(size: 24, weight: .semibold))
                 Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? .green : .white.opacity(0.45))
+                Text(model.exportInfo.map { TimeFormatting.recordingDuration($0.duration) } ?? model.elapsedText)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            Text(preset.title)
-                .font(.system(size: 14, weight: .semibold))
-            Text(preset == .maximum ? "原片质量 · 文件较大" : "同分辨率 · 目标约 1/3")
-                .font(.system(size: 10))
-                .opacity(0.72)
-        }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
 
-    private func exportChoiceLabel(
-        title: String,
-        detail: String,
-        icon: String,
-        isSelected: Bool
-    ) -> some View {
-        HStack(spacing: 13) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .medium))
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(detail)
-                    .font(.system(size: 11))
-                    .opacity(0.72)
-            }
-            Spacer()
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(isSelected ? .green : .white.opacity(0.45))
-        }
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .padding(.horizontal, 15)
-    }
+            VStack(spacing: 12) {
+                HStack(spacing: 20) {
+                    exportSectionTitle("导出内容")
+                    HStack(spacing: 22) {
+                        ForEach(RecordingTrack.allCases) { track in
+                            Toggle(track.title, isOn: Binding(
+                                get: { model.selectedExportTracks.contains(track) },
+                                set: { _ in model.toggleExportTrack(track) }
+                            ))
+                            .toggleStyle(.checkbox)
+                            .disabled(model.exportInfo?.availableTracks.contains(track) != true)
+                            .help(model.exportInfo?.availableTracks.contains(track) == true ? track.title : "未录制" + track.title)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .modifier(ExportSectionStyle())
 
-    private var finishedView: some View {
-        VStack(spacing: 0) {
-            header
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 50, weight: .medium))
-                .foregroundStyle(.green)
-                .padding(.bottom, 15)
-            Text(
-                model.lastOutputURLs.count == 1
-                    ? "录屏已保存"
-                    : "\(model.lastOutputURLs.count) 个文件已保存"
-            )
-                .font(.system(size: 22, weight: .semibold))
-            VStack(spacing: 3) {
-                ForEach(model.lastOutputURLs, id: \.path) { url in
-                    Text(url.lastPathComponent)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack(spacing: 20) {
+                    exportSectionTitle("输出方式")
+                    HStack(spacing: 2) {
+                        ForEach(ExportArrangement.allCases) { arrangement in
+                            Button {
+                                model.selectedExportArrangement = arrangement
+                                model.errorMessage = nil
+                            } label: {
+                                Text(arrangement.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .frame(width: 82, height: 30)
+                                    .contentShape(Rectangle())
+                                    .background(model.selectedExportArrangement == arrangement ? Color.white.opacity(0.18) : .clear,
+                                                in: RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityValue(model.selectedExportArrangement == arrangement ? "已选" : "未选")
+                        }
+                    }
+                    .padding(3)
+                    .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                    Spacer(minLength: 0)
+                }
+                .modifier(ExportSectionStyle())
+
+                if model.exportSelection.includesVideo {
+                    VStack(alignment: .leading, spacing: 12) {
+                        exportSectionTitle("视频大小")
+                        HStack(spacing: 3) {
+                            ForEach(RecordingQualityPreset.allCases) { preset in
+                                Button { model.selectedQualityPreset = preset } label: {
+                                    Text(preset.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .contentShape(Rectangle())
+                                        .background(model.selectedQualityPreset == preset ? Color.white.opacity(0.18) : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityValue(model.selectedQualityPreset == preset ? "已选" : "未选")
+                                .help(preset == .tiny ? "适合随手记录，小字细节会减少" : preset.detail)
+                            }
+                        }
+                        if model.selectedQualityPreset == .custom {
+                            HStack {
+                                Text("视频上限")
+                                TextField("20", text: $model.customSizeMegabytes)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 88)
+                                    .accessibilityLabel("视频大小上限 MB")
+                                Text("MB")
+                                Spacer()
+                            }
+                            .font(.system(size: 13))
+                        }
+                        Text(model.exportEstimate)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .modifier(ExportSectionStyle())
                 }
             }
-            .padding(.top, 7)
 
-            if let completionNote = model.completionNote {
-                Text(completionNote)
+            HStack(spacing: 20) {
+                exportSectionTitle("名称")
+                TextField("录屏名称", text: $model.exportName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 14))
+                    .accessibilityLabel("保存名称")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 6)
+
+            if let message = model.errorMessage ?? model.exportValidationMessage {
+                Text(message)
                     .font(.system(size: 12))
                     .foregroundStyle(.orange)
-                    .padding(.top, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let note = model.completionNote {
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
             }
 
-            HStack(spacing: 12) {
-                Button("在访达中显示") {
-                    model.revealLastRecording()
+            if !model.lastOutputURLs.isEmpty {
+                Divider().overlay(.white.opacity(0.12))
+                HStack {
+                    Label("已保存 \(model.lastOutputURLs.count) 个文件", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Spacer()
+                    Button("在访达中显示") { model.revealLastRecording() }
+                        .buttonStyle(.link)
                 }
-                .buttonStyle(SnapSecondaryButtonStyle())
-
-                Button("再录一个") {
-                    model.recordAgain()
+                .font(.system(size: 12))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(model.lastOutputURLs, id: \.path) { url in
+                            HStack {
+                                Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                if let bytes = try? ExportPlanning.fileBytes(url) {
+                                    Text(ExportPlanning.sizeText(Double(bytes)))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(SnapPrimaryButtonStyle())
+                .frame(maxHeight: 90)
             }
-            .padding(.top, 24)
-            Spacer()
+
+            Spacer(minLength: 0)
+            Button { model.exportRecording() } label: {
+                Label(model.exportButtonTitle, systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(SnapPrimaryButtonStyle())
+            .disabled(!model.canExport)
+
+            HStack {
+                Button(model.lastOutputURLs.isEmpty ? "放弃此次录制" : "完成") { model.recordAgain() }
+                Spacer()
+                Button("重新录制") { model.restartRecording() }
+            }
+            .buttonStyle(ExportSecondaryButtonStyle())
         }
+        .padding(.top, 10)
+    }
+
+    private func exportSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 64, alignment: .leading)
     }
 
     private var failedView: some View {
@@ -1125,39 +1093,30 @@ private struct SnapSecondaryButtonStyle: ButtonStyle {
     }
 }
 
-private struct SnapExportChoiceButtonStyle: ButtonStyle {
-    let isSelected: Bool
+private struct ExportSectionStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 1)
+            }
+    }
+}
 
+private struct ExportSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.white)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? AnyShapeStyle(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.88, green: 0.22, blue: 0.41).opacity(0.72),
-                                        Color.purple.opacity(0.72)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            : AnyShapeStyle(Color.white.opacity(0.11))
-                    )
-                    .opacity(configuration.isPressed ? 0.78 : 1)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(
-                                isSelected
-                                    ? Color.white.opacity(0.18)
-                                    : Color.white.opacity(0.1),
-                                lineWidth: 1
-                            )
-                    }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white.opacity(0.88))
+            .padding(.horizontal, 15)
+            .frame(height: 34)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .background(.white.opacity(configuration.isPressed ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.22), lineWidth: 1)
             }
-            .scaleEffect(configuration.isPressed ? 0.988 : 1)
     }
 }

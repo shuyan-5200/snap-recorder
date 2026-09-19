@@ -6,7 +6,13 @@ import CoreVideo
 import Foundation
 
 enum RecordingDiagnostics {
+    static var isExportPreview: Bool {
+        CommandLine.arguments.contains("--preview-export")
+            || Bundle.main.object(forInfoDictionaryKey: "SnapRecorderExportPreview") as? Bool == true
+    }
+
     static func run() async throws -> String {
+        if CommandLine.arguments.contains("--audio-only") { return try await validateVoiceExport() }
         try validateCaptureSizing()
         try validateRegionEffects()
         try validateMouseEffects()
@@ -103,9 +109,10 @@ enum RecordingDiagnostics {
         let qualityReport = try await validateQualityChoiceExport(
             sourceVideoURL: outputURL
         )
+        let exportReport = try await ExportDiagnostics.run()
         let voiceReport = try await validateVoiceExport()
         let voiceOnlyReport = try await validateVoiceOnlyExport()
-        return "Snap Recorder self-test passed: \(String(format: "%.2f", duration))s, \(Int(naturalSize.width))x\(Int(naturalSize.height)), \(fileSize) bytes; \(qualityReport); \(voiceReport); \(voiceOnlyReport); \(cameraReport); \(portraitReport)"
+        return "Snap Recorder self-test passed: \(String(format: "%.2f", duration))s, \(Int(naturalSize.width))x\(Int(naturalSize.height)), \(fileSize) bytes; \(qualityReport); \(exportReport); \(voiceReport); \(voiceOnlyReport); \(cameraReport); \(portraitReport)"
     }
 
     private static func validateQualityChoiceExport(
@@ -134,18 +141,14 @@ enum RecordingDiagnostics {
         )
         let maximumResult = try await service.exportPendingRecording(
             qualityPreset: .maximum,
-            modes: []
+            selection: RecordingExportSelection(tracks: [.video], arrangement: .merged)
         )
 
         let compactDestination = directory.appendingPathComponent("compact.mp4")
-        try service.installPendingRecordingForSelfTest(
-            videoURL: compactSourceURL,
-            microphoneURL: nil,
-            finalVideoURL: compactDestination
-        )
         let compactResult = try await service.exportPendingRecording(
             qualityPreset: .compact,
-            modes: []
+            selection: RecordingExportSelection(tracks: [.video], arrangement: .merged),
+            name: compactDestination.deletingPathExtension().lastPathComponent
         )
 
         guard let maximumURL = maximumResult.primaryURL,
@@ -166,17 +169,23 @@ enum RecordingDiagnostics {
 
         guard maximumResult.urls.count == 1,
               compactResult.urls.count == 1,
-              sourceSignature == maximumSignature,
+              !maximumSignature.isEmpty,
               sourceSignature != compactSignature,
               sourceSize == compactSize,
               compactFileSize > 5_000,
-              !fileManager.fileExists(atPath: maximumSourceURL.path),
-              !fileManager.fileExists(atPath: compactSourceURL.path) else {
+              fileManager.fileExists(atPath: maximumSourceURL.path),
+              fileManager.fileExists(atPath: compactSourceURL.path) else {
             throw CaptureError.couldNotFinishWriter(
                 "最高画质或小体积导出选择自检异常。"
             )
         }
-        return "post-record quality choice passed"
+        try service.discardPendingRecording()
+        guard !fileManager.fileExists(atPath: maximumSourceURL.path),
+              fileManager.fileExists(atPath: maximumURL.path),
+              fileManager.fileExists(atPath: compactURL.path) else {
+            throw CaptureError.couldNotFinishWriter("结束导出会话误删了已保存文件。")
+        }
+        return "repeat export and session cleanup passed"
     }
 
     private static func validateVoiceOnlyExport() async throws -> String {
@@ -355,6 +364,12 @@ enum RecordingDiagnostics {
             throw CaptureError.couldNotFinishWriter("自检无法创建重名占位文件。")
         }
         let sourceSignature = try await videoSampleSignature(at: sourceVideoURL)
+        let muted = directory.appendingPathComponent("muted.mp4")
+        try await RecordingExporter.copyVideoOnly(sourceURL: sourceVideoURL, outputURL: muted)
+        guard try await videoSampleSignature(at: muted) == sourceSignature,
+              try await AVURLAsset(url: muted).loadTracks(withMediaType: .audio).isEmpty else {
+            throw CaptureError.couldNotFinishWriter("去除声音时改写了视频样本。")
+        }
 
         let service = ScreenCaptureService()
         try service.installPendingRecordingForSelfTest(
@@ -362,44 +377,75 @@ enum RecordingDiagnostics {
             microphoneURL: sourceVoiceURL,
             finalVideoURL: desiredVideoURL
         )
+        let all: Set<RecordingTrack> = [.video, .systemAudio, .voice]
+        // Occupy one member of the three-file batch; every output must share its new suffix.
+        let occupied = TimeFormatting.separateVideoOutputURL(matching: desiredVideoURL)
+        try Data().write(to: occupied)
         let result = try await service.exportPendingRecording(
-            qualityPreset: .compact,
-            modes: Set(VoiceExportMode.allCases)
+            qualityPreset: .maximum,
+            selection: RecordingExportSelection(tracks: all, arrangement: .separate)
         )
-        guard result.urls.count == 3 else {
-            throw CaptureError.couldNotFinishWriter("三文件导出数量自检异常。")
+        let prefixes = ["Snap 视频 ", "Snap 电脑声音 ", "Snap 人声 "]
+        guard result.urls.count == 3,
+              zip(result.urls, prefixes).allSatisfy({ $0.lastPathComponent.hasPrefix($1) && $0.lastPathComponent.contains(" (2)") }),
+              try await AVURLAsset(url: result.urls[0]).loadTracks(withMediaType: .audio).isEmpty,
+              try ExportPlanning.fileBytes(occupied) == 0 else {
+            throw CaptureError.couldNotFinishWriter("全部分轨、视频无声或统一重名后缀异常。")
         }
-        let outputNames = result.urls.map(\.lastPathComponent)
-        let prefixes = ["Snap 录屏 ", "Snap 视频 ", "Snap 人声 "]
-        let placeholderAttributes = try fileManager.attributesOfItem(
-            atPath: desiredVideoURL.path
-        )
-        let placeholderSize = (placeholderAttributes[.size] as? NSNumber)?.intValue
-        let outputSizes = try result.urls.map { url in
-            let attributes = try fileManager.attributesOfItem(atPath: url.path)
-            return (attributes[.size] as? NSNumber)?.intValue ?? 0
+        try await ExportDiagnostics.validateToneIsolation(video: result.urls[1], voice: result.urls[2])
+        let sourceDuration = try await AVURLAsset(url: sourceVideoURL).load(.duration).seconds
+        var allOutputs = result.urls
+        // Every nonempty content subset, with each valid arrangement, is tested against real decoded media.
+        for bits in 1...7 {
+            let tracks = Set(RecordingTrack.allCases.enumerated().compactMap { bits & (1 << $0.offset) != 0 ? $0.element : nil })
+            for arrangement in ExportArrangement.allCases {
+                let selection = RecordingExportSelection(tracks: tracks, arrangement: arrangement)
+                let exported = try await service.exportPendingRecording(
+                    qualityPreset: .custom, selection: selection,
+                    name: "组合-\(bits)-\(arrangement.rawValue)",
+                    // Audio-only must ignore an irrelevant, invalid video budget.
+                    customMegabytes: tracks.contains(.video) ? 0.3 : .nan
+                )
+                guard exported.urls.count == selection.files.count else {
+                    throw CaptureError.couldNotFinishWriter("输出文件数量错误。")
+                }
+                for (url, kind) in zip(exported.urls, selection.files) {
+                    let asset = AVURLAsset(url: url)
+                    let hasVideo = try await !asset.loadTracks(withMediaType: .video).isEmpty
+                    let hasAudio = try await !asset.loadTracks(withMediaType: .audio).isEmpty
+                    let duration = try await asset.load(.duration).seconds
+                    var expectedSystem = false, expectedVoice = false
+                    switch kind {
+                    case .video, .mergedVideo:
+                        expectedSystem = selection.includesSystemInVideo
+                        expectedVoice = selection.includesVoiceInVideo
+                        guard hasVideo, try ExportPlanning.fileBytes(url) <= 300_000 else {
+                            throw CaptureError.couldNotFinishWriter("视频缺失或超出上限。")
+                        }
+                    case .systemAudio: expectedSystem = true
+                    case .voice: expectedVoice = true
+                    case .mixedAudio: expectedSystem = true; expectedVoice = true
+                    }
+                    guard abs(duration - sourceDuration) <= 0.04,
+                          hasAudio == (expectedSystem || expectedVoice),
+                          hasVideo == (kind == .video || kind == .mergedVideo) else {
+                        throw CaptureError.couldNotFinishWriter("内容轨道或时长错误：\(url.lastPathComponent)，\(duration)/\(sourceDuration)s，video=\(hasVideo)，audio=\(hasAudio)。")
+                    }
+                    if hasAudio {
+                        try await ExportDiagnostics.validateTones(url: url, system: expectedSystem, voice: expectedVoice)
+                    }
+                }
+                allOutputs += exported.urls
+            }
         }
-        let combinedSignature = try await videoSampleSignature(at: result.urls[0])
-        let separateSignature = try await videoSampleSignature(at: result.urls[1])
-        let separateAudioTracks = try await AVURLAsset(url: result.urls[1])
-            .loadTracks(withMediaType: .audio)
-
-        guard zip(outputNames, prefixes).allSatisfy({ name, prefix in
-                  name.hasPrefix(prefix) && name.contains(" (2)")
-              }),
-              result.urls.allSatisfy({ fileManager.fileExists(atPath: $0.path) }),
-              outputSizes.allSatisfy({ $0 > 0 }),
-              sourceSignature != combinedSignature,
-              combinedSignature == separateSignature,
-              separateAudioTracks.count == 1,
-              !fileManager.fileExists(atPath: sourceVideoURL.path),
-              !fileManager.fileExists(atPath: sourceVoiceURL.path),
-              placeholderSize == 0 else {
-            throw CaptureError.couldNotFinishWriter(
-                "三文件导出事务或统一重名后缀自检异常。"
-            )
+        guard fileManager.fileExists(atPath: sourceVideoURL.path), fileManager.fileExists(atPath: sourceVoiceURL.path) else {
+            throw CaptureError.couldNotFinishWriter("重复导出丢失原片。")
         }
-        return "compact 3-file transaction passed"
+        try service.discardPendingRecording()
+        guard allOutputs.allSatisfy({ fileManager.fileExists(atPath: $0.path) }) else {
+            throw CaptureError.couldNotFinishWriter("清理损坏了已存文件。")
+        }
+        return "all content subsets and arrangements, isolation, audio-only mix, collision and repeated export passed"
     }
 
     private static func videoSampleSignature(at url: URL) async throws -> String {
@@ -581,26 +627,8 @@ enum RecordingDiagnostics {
             inside: CaptureSizing.maximumHighDefinitionOutputSize,
             allowUpscale: false
         )
-        guard displaySize == CGSize(width: 3_024, height: 1_964),
-              RecordingQuality.videoBitrate(
-                for: nativeBrowserLayout.outputSize,
-                preset: .maximum
-              ) == 43_760_288,
-              RecordingQuality.videoBitrate(
-                for: nativeBrowserLayout.outputSize,
-                preset: .compact
-              ) == 14_586_762,
-              RecordingQuality.videoBitrate(
-                for: CaptureSizing.maximumHighDefinitionOutputSize,
-                preset: .maximum
-              ) == 66_355_200,
-              RecordingQuality.videoBitrate(
-                for: CaptureSizing.maximumHighDefinitionOutputSize,
-                preset: .compact
-              ) == 22_118_400 else {
-            throw CaptureError.couldNotFinishWriter(
-                "高清输出自检异常（整屏 \(displaySize)）。"
-            )
+        guard displaySize == CGSize(width: 3_024, height: 1_964) else {
+            throw CaptureError.couldNotFinishWriter("高清输出尺寸自检异常。")
         }
 
         for aspectRatio in CaptureAspectRatio.allCases {

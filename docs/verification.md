@@ -2,6 +2,36 @@
 
 This document records reproducible project-level checks without retaining user recordings, window titles, personal paths, or private media.
 
+## v0.5.0 build 13: simplified export and shareable main panel
+
+2026-09-19. Build 13 supersedes the local build 12 below. The installed `/Applications/Snap Recorder.app` matches the verified Universal 2 executable and passes strict signature verification. The previous local App is preserved in the dated rollback folder.
+
+- Release build and the complete media self-test passed. The final interface has only Merge / Separate; all 7 nonempty content subsets in both modes are tested (14 combinations), including silent video, individual audio, mixed audio, alignment, repeat export, name collisions, cancellation and byte limits. Existing camera/portrait regression tests still pass with generated media.
+- The real export UI was visually checked with generated fixtures: narrow Merge / Separate controls, bordered content/mode/size groups, distinct name spacing, and outlined Discard This Recording / Record Again buttons. Renaming and separate export generated 3 files; switching to Merge generated a fourth without replacing the previous files. The saved/custom-size layout retains visible controls.
+- A screenshot of the normal installed main panel contains the visible UI; it no longer returns a blank image. This no longer depends on a test-only window-sharing exception.
+- Explicit `--self-test-window-capture` passed using the production main-window factory and the production region capture/export pipeline. It captures only the interior of a generated green panel. The main-window identity is resolved before hide/show; a red helper panel is created after recording begins and deliberately made shareable. All three decoded-frame samples retain the green main-panel content and exclude the helper. The test media is removed afterward. This checks the application filter's handling of later-created windows, beyond the auxiliary panels' own `.none` sharing flags.
+- Screen and region modes share that same application-exclusion filter with the main panel as the sole exception. Countdown, recording HUD, camera preview and region overlay remain auxiliary excluded windows. The menu-bar entry and reopening the application can show the main panel during recording. Browser capture remains limited to the selected independent browser window.
+- The ZIP inventory contains only the App executable, Info.plist, icon and signature. No media, screenshot, debug log, credentials or test fixture is packaged. The staged source changes introduce no media files. ZIP SHA-256: `bbf12b1cfba15b63604afba3299a9cae7d7feab4b64e4eaa5a793cf28673229d`.
+
+The real screen test is narrowly scoped to generated window content. It does not claim a new live microphone/camera pass, extended real-world recording, or manual drag/HUD-button validation on every macOS/hardware combination. GitHub CI and download checksum verification remain release gates; historical device results are below.
+
+## v0.5.0 build 12: flexible export workspace (local, unpublished)
+
+2026-09-19. The installed `/Applications/Snap Recorder.app` is updated to 0.5.0 build 12. Its executable and Info.plist are byte-identical to the verified Universal 2 build. The previous 0.4.0 build 11 App is preserved in the dated local rollback folder. No GitHub push or public release was performed.
+
+Completed checks:
+
+- `swift build -c release` and the complete `.build/release/SnapRecorder --self-test` passed. Universal arm64/x86_64 packaging and strict code-signature verification passed. The installed App opens its normal capture setup; microphone and camera remain off, and existing screen permission is available.
+- A generated 4-second 1080p60 stress clip exercises all four tiers from the same source: approximately 12.01 / 1.87 / 0.61 / 0.21 MB. High retained the master after the fidelity check. A custom 0.35 MB export stayed under its measured limit. A custom limit larger than the source preserves the source bytes. These results describe the synthetic content, not a universal compression ratio.
+- Decoded audio checks cover all 7 nonempty content subsets and each valid arrangement (16 combinations): video, computer sound, and microphone separately; one mixed MP4; voice separate with computer audio retained in video; and audio-only separate/mixed output. Distinct 440 Hz and 880 Hz tones check both retained and excluded sources. Output track presence and effective durations are checked, with a 40 ms tolerance. Pure audio ignores irrelevant video size settings.
+- Removing audio and mixing voice both preserve compressed video samples at those steps. Size optimization is a separate, explicit video encoding stage. Audio-only mixing writes an exact aligned PCM timeline before AAC encoding so silent heads/tails are preserved.
+- Tests cover name validation, shared collision suffixes, custom caps including mixed sound, cancellation, retry, failed destination recovery, repeated export from the same master, and cleanup that preserves previously saved exports. Existing capture sizing, camera composition/motion/pause, and native portrait tests also pass.
+- An isolated App using the final executable and generated media exercised the real export UI without requesting capture permissions: content checkboxes, single arrangement selection, default voice separation, rename before save, all-separate three-file output, repeated system-only export with collision suffix, zero-size rejection, audio-only settings hiding, mixed M4A export, then a combined MP4 under a 0.3 MB cap. Saved files remain listed and settings remain editable. “完成” returns to setup. An unsaved fixture also returns directly to setup through “放弃录制”, without an export.
+- Visual inspection of the isolated UI confirms short mode titles, no repetitive button subtitles, and visible confirmation controls before and after save. Only the generated-media preview bundle permits screenshots; normal capture windows/HUD remain non-shareable.
+- All fixtures are generated locally. No test recording, audio file, archive, or personal media was added to the repository.
+
+Remaining evidence boundary: this build has not been used for a new real screen/microphone/camera recording. Long recordings, physical acoustic spill from speakers into the microphone, actual restart countdown with live sources, hardware permission/error cases, and different Intel Mac encoders remain real-device acceptance work. Earlier version hardware results below are historical, not new-build coverage. Export research and measured budgets are documented in [export-redesign.md](export-redesign.md).
+
 ## v0.4.0 build 11: discrete portrait presets and window dragging
 
 Published release update. The reported continuous-slider gesture could move the entire window because the main window allowed background dragging. The shared main-window factory now disables background dragging while retaining native title-bar movement.
@@ -112,14 +142,15 @@ The release candidate was exercised on a supported recent macOS version with tem
 
 - Browser window: start, pause, resume, stop, and confirm no unrelated app or Snap Recorder UI appears.
 - Confirm the browser fills the complete frame with no wallpaper, rounded mask, shadow, or added margin.
-- Record a changing scene, export highest quality, repeat and export compact; confirm dimensions match and compare file size and text clarity.
-- Full screen: start, pause, resume, stop, and confirm Snap Recorder is excluded.
-- Microphone off: stopping shows both quality choices and the selected option exports exactly one MP4.
+- Record the same changing scene once, export each size tier repeatedly from its source, and compare file size/text clarity; compact tiers have progressively smaller dimension and frame-rate ceilings.
+- Full screen: start, pause, resume, stop, and confirm auxiliary windows are excluded; intentionally showing the main panel inside the frame includes it.
+- Microphone off: stopping opens naming and export settings; missing voice is unavailable; the default exports one MP4.
 - Microphone on + computer audio on: verify both combined and separate export.
 - Microphone on + computer audio off: verify combined voice-only video and separate silent-video + M4A output.
-- Confirm separate export creates exactly two files and no ZIP.
-- Select both export cards and confirm one action creates the combined MP4, separate MP4, and M4A with one shared timestamp/suffix.
-- Confirm final MP4 dimensions match the source policy and play in QuickTime.
+- All content selected: “分轨” creates silent MP4 + system M4A + voice M4A, and “合并” creates one MP4. No ZIP.
+- Deselect video and export either independent audio or a single mixed M4A. Change the arrangement and export again without ending the session.
+- Rename before saving, verify collisions never overwrite, cancel an export, discard before saving, and restart using the same capture source.
+- Confirm final MP4 dimensions stay within the selected tier, preserve the source aspect ratio, and play in QuickTime.
 - Confirm the standalone M4A and MP4 effective playback timelines differ by no more than 40 ms.
 - Deny microphone permission once and confirm recording does not start until permission is restored.
 - Inspect the built App and release archive for personal names, email addresses, local paths, recordings, logs, and build caches.

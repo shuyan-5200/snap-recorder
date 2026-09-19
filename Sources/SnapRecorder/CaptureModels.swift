@@ -71,28 +71,95 @@ enum RecordingPhase: Equatable {
     }
 }
 
-enum VoiceExportMode: CaseIterable, Hashable {
-    case combined
-    case separate
+enum RecordingTrack: String, CaseIterable, Hashable, Identifiable {
+    case video, systemAudio, voice
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .video: "视频"
+        case .systemAudio: "电脑声音"
+        case .voice: "人声"
+        }
+    }
+}
+
+enum ExportArrangement: String, CaseIterable, Identifiable {
+    case merged, separate
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .merged: "合并"
+        case .separate: "分轨"
+        }
+    }
+}
+
+enum ExportFileKind {
+    case mergedVideo, video, systemAudio, voice, mixedAudio
+}
+
+struct RecordingExportSelection {
+    var tracks: Set<RecordingTrack>
+    var arrangement: ExportArrangement
+    var includesVideo: Bool { tracks.contains(.video) }
+    var includesSystemInVideo: Bool {
+        includesVideo && tracks.contains(.systemAudio) && arrangement != .separate
+    }
+    var includesVoiceInVideo: Bool {
+        includesVideo && tracks.contains(.voice) && arrangement == .merged
+    }
+    var files: [ExportFileKind] {
+        if arrangement == .merged {
+            if includesVideo { return [.mergedVideo] }
+            if tracks.contains(.systemAudio), tracks.contains(.voice) { return [.mixedAudio] }
+        }
+        return RecordingTrack.allCases.filter { tracks.contains($0) }.map {
+            switch $0 {
+            case .video: .video
+            case .systemAudio: .systemAudio
+            case .voice: .voice
+            }
+        }
+    }
+
+    func validate(available: Set<RecordingTrack>) throws {
+        guard !tracks.isEmpty, tracks.isSubset(of: available) else {
+            throw CaptureError.couldNotFinishWriter("请选择已录制的内容。")
+        }
+    }
 }
 
 enum RecordingQualityPreset: String, CaseIterable, Identifiable {
-    case maximum
-    case compact
+    case maximum, balanced, compact, tiny, custom
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .maximum: "最高画质"
-        case .compact: "清晰小体积"
+        case .maximum: "高清"
+        case .balanced: "日常"
+        case .compact: "小巧"
+        case .tiny: "极小"
+        case .custom: "自定义"
         }
     }
 
     var detail: String {
         switch self {
-        case .maximum: "保留录制原片，清晰度最高"
-        case .compact: "同分辨率压缩，体积目标约 1/3"
+        case .maximum: "原始尺寸 · 最高 60 帧"
+        case .balanced: "最高 1080p · 30 帧"
+        case .compact: "最高 720p · 30 帧"
+        case .tiny: "最高 480p · 24 帧"
+        case .custom: "按视频大小上限适配尺寸"
+        }
+    }
+
+    var audioBitrate: Int {
+        switch self {
+        case .maximum: 192_000
+        case .balanced: 128_000
+        case .compact, .custom: 96_000
+        case .tiny: 64_000
         }
     }
 }
@@ -286,18 +353,9 @@ enum CaptureSizing {
 }
 
 enum RecordingQuality {
-    static func videoBitrate(
-        for outputSize: CGSize,
-        preset: RecordingQualityPreset
-    ) -> Int {
-        let pixelCount = Int(outputSize.width * outputSize.height)
-        let maximumBitrate = max(24_000_000, min(68_000_000, pixelCount * 8))
-        switch preset {
-        case .maximum:
-            return maximumBitrate
-        case .compact:
-            return maximumBitrate / 3
-        }
+    // The capture master stays generous; exports always start from this master.
+    static func videoBitrate(for outputSize: CGSize, preset: RecordingQualityPreset) -> Int {
+        max(24_000_000, min(68_000_000, Int(outputSize.width * outputSize.height * 8)))
     }
 
     static func videoSettings(
@@ -305,27 +363,33 @@ enum RecordingQuality {
         preset: RecordingQualityPreset,
         prioritizesQuality: Bool
     ) -> [String: Any] {
+        settings(size: outputSize, bitrate: videoBitrate(for: outputSize, preset: preset),
+                 frameRate: 60, reordersFrames: false, prioritizesQuality: prioritizesQuality)
+    }
+
+    static func settings(
+        size: CGSize, bitrate: Int, frameRate: Int,
+        reordersFrames: Bool, prioritizesQuality: Bool, limitsDataRate: Bool = false
+    ) -> [String: Any] {
         var compression: [String: Any] = [
-            AVVideoAverageBitRateKey: videoBitrate(
-                for: outputSize,
-                preset: preset
-            ),
-            AVVideoMaxKeyFrameIntervalKey: 120,
+            AVVideoAverageBitRateKey: bitrate,
+            AVVideoMaxKeyFrameIntervalKey: frameRate * 2,
             AVVideoMaxKeyFrameIntervalDurationKey: 2,
-            AVVideoExpectedSourceFrameRateKey: 60,
-            AVVideoAllowFrameReorderingKey: preset == .compact,
+            AVVideoExpectedSourceFrameRateKey: frameRate,
+            AVVideoAllowFrameReorderingKey: reordersFrames,
             AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
             AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC
         ]
         if prioritizesQuality {
-            compression[
-                kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String
-            ] = false
+            compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = false
+        }
+        if limitsDataRate {
+            compression[kVTCompressionPropertyKey_DataRateLimits as String] = [Double(bitrate) / 8, 1.0]
         }
         return [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(outputSize.width),
-            AVVideoHeightKey: Int(outputSize.height),
+            AVVideoWidthKey: Int(size.width),
+            AVVideoHeightKey: Int(size.height),
             AVVideoCompressionPropertiesKey: compression,
             AVVideoColorPropertiesKey: [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
