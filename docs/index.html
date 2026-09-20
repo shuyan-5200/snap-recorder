@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Snap Recorder — 极简录屏，高清保存</title>
-  <meta name="description" content="面向 macOS 的极简高清录屏工具。浏览器、整个屏幕或自定义区域，本地处理，两档画质。" />
+  <title>Snap Recorder — 极简录屏，自在导出</title>
+  <meta name="description" content="Snap Recorder 0.5.0：录制浏览器、整个屏幕或局部区域。视频、电脑声音、人声自由合并或分轨，五档大小，保存后可继续导出。" />
   <meta name="theme-color" content="#ffffff" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Snap Recorder — 极简录屏，高清保存" />
-  <meta property="og:description" content="选择来源，录完按需合并或分轨，五档大小自由选择。没有账号，没有云。" />
+  <meta property="og:title" content="Snap Recorder — 极简录屏，自在导出" />
+  <meta property="og:description" content="录下浏览器、整个屏幕或任意区域。视频、电脑声音、人声，按需合并或分轨。" />
   <meta property="og:url" content="https://shuyan-5200.github.io/snap-recorder/" />
-  <meta property="og:image" content="https://raw.githubusercontent.com/shuyan-5200/snap-recorder/main/docs/images/snap-recorder-main.png" />
+  <meta property="og:image" content="https://shuyan-5200.github.io/snap-recorder/images/v0.5.0/export-tracks.jpg" />
   <link rel="canonical" href="https://shuyan-5200.github.io/snap-recorder/" />
   <link rel="icon" type="image/svg+xml" href="images/snap-recorder-icon.svg" />
   <style>
@@ -504,74 +504,6 @@
       margin-top: 2px;
     }
 
-    .export-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .export-row {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 16px 18px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      transition: border-color 0.2s var(--ease);
-    }
-    .export-row.active {
-      border-color: var(--accent);
-      background: var(--accent-soft);
-      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
-    }
-    .export-check {
-      width: 18px;
-      height: 18px;
-      border-radius: 5px;
-      border: 1.5px solid var(--border);
-      flex: 0 0 auto;
-      display: grid;
-      place-items: center;
-    }
-    .export-row.active .export-check {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
-    }
-    .export-row strong {
-      display: block;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-    .export-row span {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .file-chips {
-      margin-left: auto;
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    .chip {
-      font-size: 11px;
-      font-weight: 600;
-      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-      padding: 3px 8px;
-      border-radius: 4px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      letter-spacing: -0.02em;
-    }
-    .export-row.active .chip {
-      background: var(--bg);
-      color: var(--accent);
-      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-    }
-
     /* —— Privacy band —— */
     .privacy {
       background: var(--fg);
@@ -814,8 +746,43 @@
       gap: 8px;
     }
 
+    .hero-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+    .hero-copy { text-align: left; }
+    .hero h1 { font-size: clamp(40px, 4.6vw, 56px); line-height: 1.2; max-width: 8em; margin-left: 0; }
+    .hero-lead { margin-left: 0; max-width: 26em; }
+    .hero-ctas { justify-content: flex-start; }
+    .hero-visual { margin-top: 0; min-width: 0; }
+    .hero-frame { max-width: 560px; margin: auto; padding: 0; border: none; background: transparent; }
+    .hero-frame::before { display: none; }
+    .hero-frame img { border: none; }
+    .hero-update { margin-top: 20px; font-size: 14px; color: var(--accent); }
+    .product-shot { width: 100%; max-width: 480px; margin: auto; }
+    .product-shot img { width: 100%; border-radius: 16px; box-shadow: var(--shadow-lg); }
+    .product-shot figcaption { color: var(--muted); text-align: center; font-size: 12px; margin-top: 16px; }
+    .size-section { background: var(--surface); border-block: 1px solid var(--border); }
+    .size-options { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--border); border-radius: 16px; background: var(--bg); overflow: hidden; }
+    .size-options > div { padding: 28px 20px; }
+    .size-options > div + div { border-left: 1px solid var(--border); }
+    .size-options h3 { font-size: 19px; margin-bottom: 12px; }
+    .size-options small { font-size: 11px; color: var(--accent); font-weight: 500; }
+    .size-options p { font-size: 13px; margin-bottom: 6px; }
+    .size-options span { font-size: 13px; color: var(--muted); }
+    .size-note { max-width: 780px; margin: 22px auto 0; font-size: 13px; color: var(--muted); text-align: center; }
+    section[id] { scroll-margin-top: 64px; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
     /* —— Responsive —— */
     @media (max-width: 900px) {
+      .hero-layout { grid-template-columns: 1fr; gap: 36px; }
+      .hero-copy { text-align: center; }
+      .hero h1, .hero-lead { margin-left: auto; }
+      .hero-ctas { justify-content: center; }
+      .hero-visual { max-width: 500px; margin-inline: auto; }
+      .size-options { grid-template-columns: 1fr; }
+      .size-options > div { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; padding: 20px 24px; }
+      .size-options > div + div { border-left: none; border-top: 1px solid var(--border); }
+      .size-options h3 { grid-row: span 2; margin: 0; align-self: center; }
+      .size-options p { margin: 0; }
       .nav-links { display: none; }
       .trust-row { grid-template-columns: 1fr 1fr; }
       .features-grid { grid-template-columns: 1fr; }
@@ -830,12 +797,11 @@
     }
     @media (max-width: 520px) {
       .wrap { width: min(100% - 28px, var(--max)); }
-      .trust-row { grid-template-columns: 1fr; }
+      .trust-row { grid-template-columns: 1fr 1fr; }
       .steps { grid-template-columns: 1fr; }
       .hero h1 { font-size: clamp(30px, 8.2vw, 36px); }
       .btn-lg { width: 100%; }
       .hero-ctas { flex-direction: column; align-items: stretch; }
-      .file-chips { display: none; }
       .nav-actions .btn-ghost { display: none; }
     }
   </style>
@@ -856,38 +822,41 @@
       </nav>
       <div class="nav-actions">
         <a class="btn btn-ghost" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">GitHub</a>
-        <a class="btn btn-primary" data-od-id="nav-download" href="https://github.com/shuyan-5200/snap-recorder/releases/latest" target="_blank" rel="noopener">下载</a>
+        <a class="btn btn-primary" data-od-id="nav-download" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v0.5.0/Snap-Recorder-v0.5.0-macOS-universal.zip">下载</a>
       </div>
     </div>
   </header>
 
   <main>
     <section class="hero" data-od-id="hero">
-      <div class="wrap">
+      <div class="wrap hero-layout">
+        <div class="hero-copy">
         <div class="eyebrow" data-od-id="hero-eyebrow">
           <span class="dot" aria-hidden="true"></span>
-          macOS · Universal 2 · 本地处理
+          0.5.0 新版 · macOS · 本地处理
         </div>
-        <h1 data-od-id="hero-title">极简录屏，高清保存。</h1>
+        <h1 data-od-id="hero-title">极简录屏，<br />自在导出。</h1>
         <p class="hero-lead" data-od-id="hero-lead">
-          选择来源，录完按需合并或分轨，五档大小自由选择。没有账号，没有云。
+          录下浏览器、整个屏幕或任意区域。视频、电脑声音、人声，按需合并或分轨。
         </p>
         <div class="hero-ctas">
-          <a class="btn btn-primary btn-lg" data-od-id="hero-cta-download" href="https://github.com/shuyan-5200/snap-recorder/releases/latest" target="_blank" rel="noopener">
+          <a class="btn btn-primary btn-lg" data-od-id="hero-cta-download" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v0.5.0/Snap-Recorder-v0.5.0-macOS-universal.zip">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            下载最新版
+            下载 0.5.0
           </a>
           <a class="btn btn-ghost btn-lg" data-od-id="hero-cta-source" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">查看源码</a>
         </div>
         <p class="hero-meta" data-od-id="hero-meta">
-          <span>约 2.2 MB</span>
+          <span>ZIP 约 2.2 MB</span>
           <span>macOS 14+</span>
           <span>MIT License</span>
         </p>
 
+        <p class="hero-update"><a href="https://github.com/shuyan-5200/snap-recorder/releases/tag/v0.5.0" target="_blank" rel="noopener">查看本次更新 ↗</a></p>
+        </div>
         <div class="hero-visual" data-od-id="hero-visual">
           <div class="hero-frame">
-            <img src="images/snap-recorder-main.png" alt="Snap Recorder 局部录像界面：比例、圆角、聚焦蒙版、声音与鼠标设置" width="1120" height="1172" />
+            <img src="images/v0.5.0/export-tracks.jpg" alt="0.5.0 实际导出界面：内容勾选、合并或分轨、五档视频大小与保存前命名" width="560" height="582" fetchpriority="high" />
           </div>
           <div class="hero-glow" aria-hidden="true"></div>
         </div>
@@ -898,12 +867,12 @@
       <div class="wrap">
         <div class="trust-row">
           <div class="trust-item">
-            <strong>2</strong>
-            <span>录制模式</span>
+            <strong>3</strong>
+            <span>录制来源</span>
           </div>
           <div class="trust-item">
-            <strong>4K</strong>
-            <span>最高 3840×2160</span>
+            <strong>5</strong>
+            <span>视频大小档位</span>
           </div>
           <div class="trust-item">
             <strong>0</strong>
@@ -911,7 +880,7 @@
           </div>
           <div class="trust-item">
             <strong>2.2 MB</strong>
-            <span>Universal App</span>
+            <span>Universal 安装包</span>
           </div>
         </div>
       </div>
@@ -922,22 +891,22 @@
         <div class="section-head center">
           <span class="kicker">为何选择</span>
           <h2 data-od-id="features-title">只做录屏该做的事</h2>
-          <p>没有剪辑器，没有云同步，没有账号体系。打开、录制、保存——路径最短，画质最高。</p>
+          <p>从选择画面到保存文件，保留真正需要的选择。</p>
         </div>
         <div class="features-grid">
           <article class="feature-card" data-od-id="feature-hd">
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 15h8M10 9l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
-            <h3>原生像素优先</h3>
-            <p>最高 3840×2160，H.264 High Profile。合并人声时视频轨不二次编码，画质不打折。</p>
+            <h3>清晰度与体积，按需选择</h3>
+            <p>高清、日常、小巧、极小、自定义。保留细节，或节省空间，也能直接填写视频大小上限。</p>
           </article>
           <article class="feature-card" data-od-id="feature-audio">
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" stroke="currentColor" stroke-width="1.6"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             </div>
             <h3>声音与人像，随你选择</h3>
-            <p>电脑声音、人声、摄像头独立开关。人像默认叠在右下角，录完直接得到带人像的成片。</p>
+            <p>电脑声音、人声、摄像头独立开关。人声和摄像头默认关闭，可选自然修饰，人像直接合入成片。</p>
           </article>
           <article class="feature-card" data-od-id="feature-local">
             <div class="feature-icon" aria-hidden="true">
@@ -950,22 +919,22 @@
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
             </div>
-            <h3>界面不进成片</h3>
-            <p>倒计时、主窗口与控制胶囊不会进入成片。你录到的，只有你想留下的画面。</p>
+            <h3>控制浮窗不进成片</h3>
+            <p>倒计时、录制控制条和摄像头预览自动排除。主面板可正常截图，也可主动放进整屏或局部录制画面。</p>
           </article>
           <article class="feature-card" data-od-id="feature-small">
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             </div>
-            <h3>小而完整</h3>
-            <p>Universal App 约 2.2 MB，零第三方依赖。SwiftUI + ScreenCaptureKit 原生实现。</p>
+            <h3>视频与声音，自由组合</h3>
+            <p>三项内容分别勾选，合并为一个文件，或分轨各留一份。只要声音时，也能直接导出 M4A。</p>
           </article>
           <article class="feature-card" data-od-id="feature-flow">
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
-            <h3>最短路径</h3>
-            <p>授权 → 选来源 → 3 秒倒计时 → 录制 → 选择画质 → 保存。不需要选择格式或文件夹。</p>
+            <h3>保存之后，仍可继续</h3>
+            <p>保存前命名，保存后换一种方式再次导出。录得不满意，直接放弃此次录制或重新录制。</p>
           </article>
         </div>
       </div>
@@ -1023,55 +992,41 @@
             <ul class="check-list">
               <li>
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span>电脑声音与人声分别控制<em>需要什么开什么，互不干扰</em></span>
+                <span>三项全选，合并成片<em>一个 MP4，包含画面、电脑声音与人声</em></span>
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span>合并时视频轨不重编码<em>混合声音不再重复压缩画面</em></span>
+                <span>三项全选，分轨输出<em>无声 MP4、电脑声音 M4A、人声 M4A</em></span>
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span>分轨时长对齐<em>误差不超过 40 毫秒，方便继续剪辑</em></span>
+                <span>原片保留到这次工作结束<em>换名字、换大小、换方式，都能再导出一份</em></span>
               </li>
             </ul>
           </div>
-          <div class="export-stack" data-od-id="export-options" aria-label="导出方式示例">
-            <div class="export-row active">
-              <div class="export-check" aria-hidden="true">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l5 5L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </div>
-              <div>
-                <strong>合并</strong>
-                <span>画面 + 电脑声音 + 人声</span>
-              </div>
-              <div class="file-chips"><span class="chip">MP4</span></div>
-            </div>
-            <div class="export-row">
-              <div class="export-check" aria-hidden="true"></div>
-              <div>
-                <strong>分轨</strong>
-                <span>无声视频、电脑声音、人声各一份</span>
-              </div>
-              <div class="file-chips"><span class="chip">MP4</span><span class="chip">M4A</span></div>
-            </div>
-            <div class="export-row">
-              <div class="export-check" aria-hidden="true"></div>
-              <div>
-                <strong>继续导出</strong>
-                <span>保存后可换方式再导出</span>
-              </div>
-              <div class="file-chips"><span class="chip">再次导出</span></div>
-            </div>
-            <div class="export-row">
-              <div class="export-check" aria-hidden="true"></div>
-              <div>
-                <strong>五档大小</strong>
-                <span>高清、日常、小巧、极小、自定义</span>
-              </div>
-              <div class="file-chips"><span class="chip">MP4</span></div>
-            </div>
-          </div>
+          <figure class="product-shot" data-od-id="export-options">
+            <img src="images/v0.5.0/export-again.jpg" width="560" height="738" loading="lazy" alt="已保存三个分轨文件后，切换合并与自定义大小，再导出一份" />
+            <figcaption>0.5.0 实际界面 · 使用生成的演示素材截图</figcaption>
+          </figure>
         </div>
+      </div>
+    </section>
+
+    <section class="size-section" id="sizes">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="kicker">五档大小</span>
+          <h2>认真保存，或随手记下</h2>
+          <p>每种用途，都有合适的体积。</p>
+        </div>
+        <div class="size-options">
+          <div><h3>高清</h3><p>原始尺寸 · 最高 60 帧</p><span>优先保留细节</span></div>
+          <div><h3>日常 <small>默认</small></h3><p>最高 1080p · 30 帧</p><span>日常演示与分享</span></div>
+          <div><h3>小巧</h3><p>最高 720p · 30 帧</p><span>进一步节省空间</span></div>
+          <div><h3>极小</h3><p>最高 480p · 24 帧</p><span>随手记录</span></div>
+          <div><h3>自定义</h3><p>填写 MB 上限</p><span>按时长和大小适配</span></div>
+        </div>
+        <p class="size-note">保持原始比例。小体积档可能进一步降低尺寸，极小档会减少小字细节。自定义上限针对每个 MP4，独立音频另计；高清在压缩收益不足时保留原片。</p>
       </div>
     </section>
 
@@ -1106,7 +1061,7 @@
         <div class="section-head center">
           <span class="kicker">使用流程</span>
           <h2 data-od-id="how-title">四步完成一次录屏</h2>
-          <p>从授权到成片，路径被刻意压到最短。</p>
+          <p>保存前确认，保存后仍可继续。</p>
         </div>
         <ol class="steps">
           <li class="step" data-od-id="step-1">
@@ -1122,8 +1077,8 @@
             <p>3 秒倒计时后开始。可随时暂停、继续或结束。</p>
           </li>
           <li class="step" data-od-id="step-4">
-            <h3>选择画质并保存</h3>
-            <p>选择导出内容和大小，命名后保存到「下载」。</p>
+            <h3>命名并导出</h3>
+            <p>勾选内容，选择合并或分轨、视频大小，命名后保存到「下载」。需要时可以再次导出。</p>
           </li>
         </ol>
       </div>
@@ -1133,18 +1088,18 @@
       <div class="wrap">
         <div class="section-head">
           <span class="kicker">规格</span>
-          <h2 data-od-id="specs-title">技术细节，如实列出</h2>
-          <p>不虚构指标。下列参数来自产品规格与 README。</p>
+          <h2 data-od-id="specs-title">安装与规格</h2>
+          <p>一个安装包，同时支持 Apple Silicon 与 Intel Mac。</p>
         </div>
         <dl class="specs-table">
           <div class="spec-row"><dt>平台</dt><dd>macOS 14+（人声需 macOS 15+）· Apple Silicon / Intel · Universal 2</dd></div>
-          <div class="spec-row"><dt>输出格式</dt><dd>MP4 · H.264 High Profile · SDR · Rec.709</dd></div>
+          <div class="spec-row"><dt>输出格式</dt><dd>视频 MP4（H.264 / SDR / Rec.709）；独立或混合音频 M4A（AAC）</dd></div>
           <div class="spec-row"><dt>分辨率</dt><dd>原生像素优先，最高约 3840×2160</dd></div>
-          <div class="spec-row"><dt>帧率</dt><dd>默认 60 fps 采集，实时硬件编码</dd></div>
-          <div class="spec-row"><dt>音频</dt><dd>系统声 AAC 48 kHz / 192 kbps；人声 AAC-LC 48 kHz / 192 kbps；混合 256 kbps</dd></div>
-          <div class="spec-row"><dt>鼠标</dt><dd>可完全隐藏；开启时为圆形光点、柔和光晕与 0.65 秒点击扩散波纹</dd></div>
-          <div class="spec-row"><dt>体积</dt><dd>App 约 2.2 MB · ZIP 约 1.4 MB</dd></div>
-          <div class="spec-row"><dt>依赖</dt><dd>无第三方库 · SwiftUI / AppKit / ScreenCaptureKit / AVFoundation</dd></div>
+          <div class="spec-row"><dt>帧率</dt><dd>采集最高 60 帧；导出根据档位调整</dd></div>
+          <div class="spec-row"><dt>音频</dt><dd>电脑声音与人声独立采集；独立音频为 48 kHz / 192 kbps，合入视频时随大小档位调整</dd></div>
+          <div class="spec-row"><dt>鼠标</dt><dd>可隐藏；开启后显示光点、光晕与点击波纹</dd></div>
+          <div class="spec-row"><dt>当前版本</dt><dd>0.5.0 / build 13 · Universal ZIP 约 2.2 MB</dd></div>
+          <div class="spec-row"><dt>依赖</dt><dd>无第三方库 · SwiftUI / AppKit / ScreenCaptureKit / AVFoundation / Core Image / Vision</dd></div>
           <div class="spec-row"><dt>许可</dt><dd>MIT License · 开源可自建</dd></div>
         </dl>
       </div>
@@ -1155,15 +1110,15 @@
         <div class="final-card">
           <img src="images/snap-recorder-icon.svg" alt="" width="64" height="64" />
           <h2>现在就录第一屏</h2>
-          <p>下载 ZIP，拖入「应用程序」，授权后即可开始。</p>
+          <p>下载 0.5.0，解压后拖入「应用程序」，授权后即可开始。</p>
           <div class="final-actions">
-            <a class="btn btn-primary btn-lg" data-od-id="final-download" href="https://github.com/shuyan-5200/snap-recorder/releases/latest" target="_blank" rel="noopener">
+            <a class="btn btn-primary btn-lg" data-od-id="final-download" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v0.5.0/Snap-Recorder-v0.5.0-macOS-universal.zip">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              下载最新版
+              下载 0.5.0
             </a>
             <a class="btn btn-ghost btn-lg" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">从源码构建</a>
           </div>
-          <p class="final-note">当前版本尚未经过 Apple 公证；首次启动如被拦截，请右键应用并选择「打开」。<a href="https://github.com/shuyan-5200/snap-recorder#安装" target="_blank" rel="noopener">查看安装说明</a></p>
+          <p class="final-note">当前版本尚未经过 Apple 公证；首次启动如被拦截，请右键应用并选择「打开」。<a href="https://github.com/shuyan-5200/snap-recorder#安装" target="_blank" rel="noopener">查看安装说明</a> · <a href="https://github.com/shuyan-5200/snap-recorder/releases" target="_blank" rel="noopener">历史版本</a></p>
         </div>
       </div>
     </section>
