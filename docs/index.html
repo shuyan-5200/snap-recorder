@@ -1020,13 +1020,13 @@
           <p>每种用途，都有合适的体积。</p>
         </div>
         <div class="size-options">
-          <div><h3>高清</h3><p>原始尺寸 · 最高 60 帧</p><span>优先保留细节</span></div>
+          <div><h3>高清</h3><p>原始尺寸 · 30 帧</p><span>优先保留细节</span></div>
           <div><h3>日常 <small>默认</small></h3><p>最高 1080p · 30 帧</p><span>日常演示与分享</span></div>
           <div><h3>小巧</h3><p>最高 720p · 30 帧</p><span>进一步节省空间</span></div>
-          <div><h3>极小</h3><p>最高 480p · 24 帧</p><span>随手记录</span></div>
-          <div><h3>自定义</h3><p>填写 MB 上限</p><span>按时长和大小适配</span></div>
+          <div><h3>极小</h3><p>最高 480p · 30 帧</p><span>随手记录</span></div>
+          <div><h3>自定义</h3><p>填写 MB 上限 · 30 帧</p><span>按时长和大小适配</span></div>
         </div>
-        <p class="size-note">保持原始比例。小体积档可能进一步降低尺寸，极小档会减少小字细节。自定义上限针对每个 MP4，独立音频另计；高清在压缩收益不足时保留原片。</p>
+        <p class="size-note">保持原始比例。小体积档可能进一步降低尺寸，极小档会减少小字细节。自定义上限针对每个 MP4，最低不得低于当前“极小”档的体积预算，导出页会建议大小范围；独立音频另计。高清在压缩收益不足且原片不超过 30 帧时保留原片。</p>
       </div>
     </section>
 
@@ -1095,7 +1095,7 @@
           <div class="spec-row"><dt>平台</dt><dd>macOS 14+（人声需 macOS 15+）· Apple Silicon / Intel · Universal 2</dd></div>
           <div class="spec-row"><dt>输出格式</dt><dd>视频 MP4（H.264 / SDR / Rec.709）；独立或混合音频 M4A（AAC）</dd></div>
           <div class="spec-row"><dt>分辨率</dt><dd>原生像素优先，最高约 3840×2160</dd></div>
-          <div class="spec-row"><dt>帧率</dt><dd>采集最高 60 帧；导出根据档位调整</dd></div>
+          <div class="spec-row"><dt>帧率</dt><dd>采集与所有视频档位最高 30 帧/秒</dd></div>
           <div class="spec-row"><dt>音频</dt><dd>电脑声音与人声独立采集；独立音频为 48 kHz / 192 kbps，合入视频时随大小档位调整</dd></div>
           <div class="spec-row"><dt>鼠标</dt><dd>可隐藏；开启后显示光点、光晕与点击波纹</dd></div>
           <div class="spec-row"><dt>当前版本</dt><dd>0.5.0 / build 13 · Universal ZIP 约 2.2 MB</dd></div>

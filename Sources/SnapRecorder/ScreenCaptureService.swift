@@ -227,7 +227,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         let configuration = SCStreamConfiguration()
         configuration.width = Int(streamSize.width)
         configuration.height = Int(streamSize.height)
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: request.cameraOverlay == nil ? 60 : 30)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(ExportPlanning.frameRate))
         configuration.queueDepth = 5
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.scalesToFit = true
@@ -402,6 +402,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             sourceBytes: try ExportPlanning.fileBytes(pendingRecording.videoURL),
             hasSystemAudio: try await !asset.loadTracks(withMediaType: .audio).isEmpty,
             sourceVideoBitrate: Double(try await track.load(.estimatedDataRate)),
+            sourceFrameRate: Double(try await track.load(.nominalFrameRate)),
             hasMicrophone: pendingRecording.microphoneURL != nil
         )
     }
@@ -474,14 +475,15 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                     try ExportPlanning.plan(
                         sourceSize: info.size, duration: info.duration, preset: qualityPreset,
                         customMegabytes: customMegabytes, hasSystemAudio: selection.includesSystemInVideo,
-                        sourceVideoBitrate: info.sourceVideoBitrate, sourceBytes: sourceBytes,
+                        sourceVideoBitrate: info.sourceVideoBitrate, sourceFrameRate: info.sourceFrameRate,
+                        sourceBytes: sourceBytes,
                         includesCombinedVoice: selection.includesVoiceInVideo,
                         bitrateScale: scale, resolutionScale: resolutionScale
                     )
                 }
                 let initialPlan = try plan()
                 let byteCeiling: Int64? = qualityPreset == .maximum ? nil
-                    : initialPlan.byteLimit ?? Int64(initialPlan.estimatedBytesPerSecond * info.duration * 1.06 + 16_384)
+                    : initialPlan.byteLimit ?? ExportPlanning.estimatedByteCeiling(for: initialPlan, duration: info.duration)
                 var scale = 1.0, resolutionScale = 1.0
                 for attempt in 0..<4 {
                     let currentPlan = try plan(scale: scale, resolutionScale: resolutionScale)
@@ -502,7 +504,9 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                             } catch is CancellationError { throw CancellationError() }
                             catch { /* Keep the master if comparison is unavailable. */ }
                         }
-                        if !smaller || !preservesDetail {
+                        if info.sourceFrameRate > 0,
+                           info.sourceFrameRate <= Double(ExportPlanning.frameRate) + 0.001,
+                           (!smaller || !preservesDetail) {
                             try FileManager.default.removeItem(at: video)
                             try FileManager.default.copyItem(at: videoSource, to: video)
                         }

@@ -12,6 +12,7 @@ enum RecordingDiagnostics {
     }
 
     static func run() async throws -> String {
+        if CommandLine.arguments.contains("--export-only") { return try await ExportDiagnostics.run() }
         if CommandLine.arguments.contains("--audio-only") { return try await validateVoiceExport() }
         try validateCaptureSizing()
         try validateRegionEffects()

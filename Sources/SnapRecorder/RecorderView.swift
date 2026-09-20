@@ -767,16 +767,22 @@ struct RecorderView: View {
                             }
                         }
                         if model.selectedQualityPreset == .custom {
-                            HStack {
-                                Text("视频上限")
-                                TextField("20", text: $model.customSizeMegabytes)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 88)
-                                    .accessibilityLabel("视频大小上限 MB")
-                                Text("MB")
-                                Spacer()
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text("视频上限")
+                                    TextField("MB", text: $model.customSizeMegabytes)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 88)
+                                        .accessibilityLabel("视频大小上限 MB")
+                                    Text("MB")
+                                    Spacer()
+                                }
+                                .font(.system(size: 13))
+                                Text(model.customSizeGuidance)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
                             }
-                            .font(.system(size: 13))
                         }
                         Text(model.exportEstimate)
                             .font(.system(size: 12))

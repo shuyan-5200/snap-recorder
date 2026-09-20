@@ -149,7 +149,8 @@ final class AppModel: ObservableObject {
             sourceSize: exportInfo.size, duration: exportInfo.duration,
             preset: selectedQualityPreset, customMegabytes: Double(customSizeMegabytes),
             hasSystemAudio: exportSelection.includesSystemInVideo,
-            sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceBytes: exportInfo.sourceBytes,
+            sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceFrameRate: exportInfo.sourceFrameRate,
+            sourceBytes: exportInfo.sourceBytes,
             includesCombinedVoice: exportSelection.includesVoiceInVideo
         )
     }
@@ -164,7 +165,8 @@ final class AppModel: ObservableObject {
                         sourceSize: exportInfo.size, duration: exportInfo.duration,
                         preset: selectedQualityPreset, customMegabytes: Double(customSizeMegabytes),
                         hasSystemAudio: exportSelection.includesSystemInVideo,
-                        sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceBytes: exportInfo.sourceBytes,
+                        sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceFrameRate: exportInfo.sourceFrameRate,
+                        sourceBytes: exportInfo.sourceBytes,
                         includesCombinedVoice: exportSelection.includesVoiceInVideo
                     )
                 }
@@ -175,6 +177,18 @@ final class AppModel: ObservableObject {
 
     var canExport: Bool {
         isExportWorkspace && exportInfo != nil && exportValidationMessage == nil
+    }
+
+    var customSizeGuidance: String {
+        guard let info = exportInfo, exportSelection.includesVideo,
+              let range = try? ExportPlanning.customSizeRecommendation(
+                sourceSize: info.size, duration: info.duration,
+                hasSystemAudio: exportSelection.includesSystemInVideo,
+                sourceVideoBitrate: info.sourceVideoBitrate, sourceBytes: info.sourceBytes,
+                includesCombinedVoice: exportSelection.includesVoiceInVideo
+              ) else { return "" }
+        return String(format: "建议 %.1f–%.1f MB · 最小值按“极小”档预算计算",
+                      range.minimum, range.suggestedMaximum)
     }
 
     var exportEstimate: String {
@@ -859,6 +873,15 @@ final class AppModel: ObservableObject {
                 exportInfo = try await captureService.pendingExportInfo()
                 selectedExportTracks = exportInfo?.availableTracks ?? [.video]
                 selectedExportArrangement = selectedExportTracks.contains(.voice) ? .separate : .merged
+                if let exportInfo,
+                   let range = try? ExportPlanning.customSizeRecommendation(
+                    sourceSize: exportInfo.size, duration: exportInfo.duration,
+                    hasSystemAudio: exportSelection.includesSystemInVideo,
+                    sourceVideoBitrate: exportInfo.sourceVideoBitrate, sourceBytes: exportInfo.sourceBytes,
+                    includesCombinedVoice: exportSelection.includesVoiceInVideo
+                   ) {
+                    customSizeMegabytes = String(format: "%.1f", range.suggestedMaximum)
+                }
             }
             catch { errorMessage = error.localizedDescription }
             phase = .choosingExport

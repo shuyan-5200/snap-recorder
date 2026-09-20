@@ -25,9 +25,9 @@ final class CameraFrameStore: @unchecked Sendable {
 
         // Normally timestamps arrive in order. Keep that invariant even if a
         // device delivers one late frame, so it cannot displace a newer frame.
-        let index = storedFrames.firstIndex {
+        let index = storedFrames.firstIndex(where: {
             CMTimeCompare($0.presentationTime, frame.presentationTime) > 0
-        } ?? storedFrames.endIndex
+        }) ?? storedFrames.endIndex
         storedFrames.insert(frame, at: index)
         if storedFrames.count > capacity {
             storedFrames.removeFirst(storedFrames.count - capacity)
