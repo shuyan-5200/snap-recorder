@@ -8,6 +8,7 @@ struct RecordingExportInfo {
     let sourceBytes: Int64
     let hasSystemAudio: Bool
     let sourceVideoBitrate: Double
+    let sourceFrameRate: Double
     let hasMicrophone: Bool
     var availableTracks: Set<RecordingTrack> {
         var tracks: Set<RecordingTrack> = [.video]
@@ -31,6 +32,32 @@ struct VideoExportPlan {
 }
 
 enum ExportPlanning {
+    static let frameRate = 30
+    static let maximumCustomMegabytes = 100_000.0
+
+    static func estimatedByteCeiling(for plan: VideoExportPlan, duration: Double) -> Int64 {
+        Int64(plan.estimatedBytesPerSecond * duration * 1.06 + 16_384)
+    }
+
+    static func customSizeRecommendation(
+        sourceSize: CGSize, duration: Double, hasSystemAudio: Bool,
+        sourceVideoBitrate: Double?, sourceBytes: Int64,
+        includesCombinedVoice: Bool
+    ) throws -> (minimum: Double, suggestedMaximum: Double) {
+        let tiny = try plan(sourceSize: sourceSize, duration: duration, preset: .tiny,
+                            hasSystemAudio: hasSystemAudio, sourceVideoBitrate: sourceVideoBitrate,
+                            includesCombinedVoice: includesCombinedVoice)
+        // Match the actual "极小" export ceiling, then round up to a tenth of an MB.
+        let minimum = max(0.1, ceil(Double(estimatedByteCeiling(for: tiny, duration: duration)) / 100_000) / 10)
+        guard minimum <= maximumCustomMegabytes else {
+            throw CaptureError.couldNotFinishWriter("这段录制的“极小”档已超过可设置的大小上限。")
+        }
+        let voiceBytes = includesCombinedVoice && !hasSystemAudio
+            ? Double(RecordingQualityPreset.custom.audioBitrate) / 8 * duration : 0
+        let sourceEstimate = ceil((Double(sourceBytes) + voiceBytes + 16_384) / 100_000) / 10
+        return (minimum, min(maximumCustomMegabytes, max(minimum, sourceEstimate)))
+    }
+
     static func plan(
         sourceSize: CGSize,
         duration: Double,
@@ -38,6 +65,7 @@ enum ExportPlanning {
         customMegabytes: Double? = nil,
         hasSystemAudio: Bool,
         sourceVideoBitrate: Double? = nil,
+        sourceFrameRate: Double? = nil,
         sourceBytes: Int64? = nil,
         includesCombinedVoice: Bool = false,
         bitrateScale: Double = 1,
@@ -50,38 +78,44 @@ enum ExportPlanning {
         let hasAudio = hasSystemAudio || includesCombinedVoice
         let audioRate = hasAudio ? preset.audioBitrate : 0
         var bounds: CGSize
-        var fps: Int
         var bitrate: Int
         var limit: Int64?
         switch preset {
         case .maximum:
             bounds = sourceSize
-            fps = 60
             // Native pixels, with a much lower ceiling than the capture master.
             bitrate = max(1_000_000, min(32_000_000, Int(sourceSize.width * sourceSize.height * 5.8)))
         case .balanced:
             bounds = CGSize(width: 1_920, height: 1_080)
-            fps = 30
             bitrate = 4_000_000
         case .compact:
             bounds = CGSize(width: 1_280, height: 720)
-            fps = 30
             bitrate = 1_200_000
         case .tiny:
             bounds = CGSize(width: 854, height: 480)
-            fps = 24
             bitrate = 400_000
         case .custom:
-            guard let mb = customMegabytes, mb.isFinite, mb >= 0.1, mb <= 100_000 else {
-                throw CaptureError.couldNotFinishWriter("请输入 0.1–100000 MB 之间的视频大小。")
+            let recommendation = try customSizeRecommendation(
+                sourceSize: sourceSize, duration: duration, hasSystemAudio: hasSystemAudio,
+                sourceVideoBitrate: sourceVideoBitrate, sourceBytes: sourceBytes ?? 0,
+                includesCombinedVoice: includesCombinedVoice
+            )
+            let minimum = recommendation.minimum
+            guard let mb = customMegabytes, mb.isFinite,
+                  mb >= minimum, mb <= maximumCustomMegabytes else {
+                throw CaptureError.couldNotFinishWriter(
+                    "视频上限请输入 \(String(format: "%.1f", minimum))–100000 MB，不应低于“极小”档的体积预算。"
+                )
             }
             limit = Int64(mb * 1_000_000)
             let mixReserve = includesCombinedVoice
                 ? (hasSystemAudio ? 16_384 : Double(audioRate) / 8 * duration + 16_384) : 0
-            if let sourceBytes, Double(sourceBytes) + mixReserve <= Double(limit!),
+            if let sourceBytes, let sourceFrameRate,
+               sourceFrameRate > 0, sourceFrameRate <= Double(frameRate) + 0.001,
+               Double(sourceBytes) + mixReserve <= Double(limit!),
                bitrateScale == 1, resolutionScale == 1 {
                 return VideoExportPlan(
-                    size: sourceSize, frameRate: 60,
+                    size: sourceSize, frameRate: frameRate,
                     videoBitrate: Int(sourceVideoBitrate ?? 1_000_000),
                     audioBitrate: audioRate, byteLimit: limit, preservesSource: true
                 )
@@ -95,22 +129,16 @@ enum ExportPlanning {
             let effectiveRate = Double(bitrate)
             if effectiveRate >= 10_000_000 {
                 bounds = sourceSize
-                fps = 60
             } else if effectiveRate >= 2_400_000 {
                 bounds = CGSize(width: 1_920, height: 1_080)
-                fps = 30
             } else if effectiveRate >= 800_000 {
                 bounds = CGSize(width: 1_280, height: 720)
-                fps = 30
             } else if effectiveRate >= 250_000 {
                 bounds = CGSize(width: 854, height: 480)
-                fps = 24
             } else if effectiveRate >= 160_000 {
                 bounds = CGSize(width: 480, height: 270)
-                fps = 20
             } else {
                 bounds = CGSize(width: 320, height: 180)
-                fps = 15
             }
         }
         if preset != .maximum, sourceSize.height > sourceSize.width, bounds.width > bounds.height {
@@ -135,7 +163,7 @@ enum ExportPlanning {
         }
         return VideoExportPlan(
             size: CaptureSizing.evenSize(width: size.width * resolutionScale, height: size.height * resolutionScale),
-            frameRate: fps,
+            frameRate: frameRate,
             videoBitrate: max(80_000, Int(Double(bitrate) * bitrateScale)),
             audioBitrate: audioRate,
             byteLimit: limit

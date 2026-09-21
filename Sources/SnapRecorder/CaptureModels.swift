@@ -146,11 +146,11 @@ enum RecordingQualityPreset: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .maximum: "原始尺寸 · 最高 60 帧"
+        case .maximum: "原始尺寸 · 30 帧"
         case .balanced: "最高 1080p · 30 帧"
         case .compact: "最高 720p · 30 帧"
-        case .tiny: "最高 480p · 24 帧"
-        case .custom: "按视频大小上限适配尺寸"
+        case .tiny: "最高 480p · 30 帧"
+        case .custom: "按大小上限适配尺寸 · 30 帧"
         }
     }
 
@@ -364,7 +364,7 @@ enum RecordingQuality {
         prioritizesQuality: Bool
     ) -> [String: Any] {
         settings(size: outputSize, bitrate: videoBitrate(for: outputSize, preset: preset),
-                 frameRate: 60, reordersFrames: false, prioritizesQuality: prioritizesQuality)
+                 frameRate: ExportPlanning.frameRate, reordersFrames: false, prioritizesQuality: prioritizesQuality)
     }
 
     static func settings(

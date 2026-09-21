@@ -18,7 +18,7 @@ enum ExportDiagnostics {
         let service = ScreenCaptureService()
         try service.installPendingRecordingForSelfTest(videoURL: source, microphoneURL: nil,
                                                        finalVideoURL: directory.appendingPathComponent("export.mp4"))
-        var report: [String] = ["old 1080p60 master: \(sourceBytes) bytes"]
+        var report: [String] = ["legacy 1080p60 master: \(sourceBytes) bytes"]
         var sizes: [Int64] = []
         for preset in [RecordingQualityPreset.maximum, .balanced, .compact, .tiny] {
             let result = try await service.exportPendingRecording(qualityPreset: preset, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged), name: preset.rawValue)
@@ -33,13 +33,15 @@ enum ExportDiagnostics {
                                                duration: 4, preset: preset, hasSystemAudio: false)
             guard dimensions.width <= plan.size.width, dimensions.height <= plan.size.height,
                   dimensions.width / dimensions.height > 1.75, abs(duration - 4) < 0.06,
-                  rate <= Float(plan.frameRate) + 0.1 else {
+                  abs(rate - Float(ExportPlanning.frameRate)) < 0.1 else {
                 throw failure("\(preset.title)尺寸、帧率或时长不符合计划。")
             }
             if preset == .maximum {
                 let psnr = try await compareFrames(source, url)
-                guard psnr >= 32 else { throw failure("高清压缩误差过大：\(psnr) dB。") }
-                report.append(String(format: "high PSNR versus master: %.2f dB", psnr))
+                // A legacy 60 fps master cannot be copied as a quality fallback.
+                // Its changing detail may also differ between 30 fps sample points.
+                guard psnr >= 24 else { throw failure("旧版原片降帧后画面误差过大：\(psnr) dB。") }
+                report.append(String(format: "30 fps high PSNR versus legacy master: %.2f dB", psnr))
             }
             sizes.append(bytes)
             report.append("\(preset.title): \(Int(dimensions.width))x\(Int(dimensions.height)) \(rate)fps, \(bytes) bytes")
@@ -50,10 +52,36 @@ enum ExportDiagnostics {
         }
         print("EXPORT BENCHMARK (synthetic, 4s):\n" + report.joined(separator: "\n"))
         fflush(stdout)
-        let unchanged = try await service.exportPendingRecording(qualityPreset: .custom, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged),
-                                                                 name: "无需压缩", customMegabytes: 20)
-        guard try Data(contentsOf: source) == Data(contentsOf: unchanged.urls[0]) else {
-            throw failure("已在大小上限内的原片被不必要地改写。")
+        let legacyCustom = try await service.exportPendingRecording(qualityPreset: .custom, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged),
+                                                                    name: "旧原片转30帧", customMegabytes: 20)
+        let customTrack = try await AVURLAsset(url: legacyCustom.urls[0]).loadTracks(withMediaType: .video)[0]
+        let customRate = try await customTrack.load(.nominalFrameRate)
+        guard abs(customRate - Float(ExportPlanning.frameRate)) < 0.1,
+              try Data(contentsOf: source) != Data(contentsOf: legacyCustom.urls[0]) else {
+            throw failure("旧版60帧原片未转换为30帧。")
+        }
+        let nativePlan = try ExportPlanning.plan(sourceSize: CGSize(width: 1920, height: 1080),
+            duration: 4, preset: .custom, customMegabytes: 20, hasSystemAudio: false,
+            sourceFrameRate: 30, sourceBytes: sourceBytes)
+        guard nativePlan.preservesSource, nativePlan.frameRate == ExportPlanning.frameRate else {
+            throw failure("原生30帧原片未保留直通路径。")
+        }
+        let recommendation = try ExportPlanning.customSizeRecommendation(
+            sourceSize: CGSize(width: 1920, height: 1080), duration: 4,
+            hasSystemAudio: false, sourceVideoBitrate: nil, sourceBytes: sourceBytes,
+            includesCombinedVoice: false
+        )
+        guard recommendation.minimum * 1_000_000 >= Double(sizes[3]),
+              recommendation.suggestedMaximum >= recommendation.minimum else {
+            throw failure("自定义建议范围低于“极小”档的实际大小。")
+        }
+        do {
+            _ = try ExportPlanning.plan(sourceSize: CGSize(width: 1920, height: 1080),
+                duration: 4, preset: .custom, customMegabytes: recommendation.minimum - 0.1,
+                hasSystemAudio: false, sourceBytes: sourceBytes)
+            throw failure("低于“极小”档预算的上限被接受。")
+        } catch let error as CaptureError {
+            guard error.localizedDescription.contains("极小") else { throw error }
         }
         let custom = try await service.exportPendingRecording(qualityPreset: .custom, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged),
                                                                name: "大小上限", customMegabytes: 0.35)
@@ -69,7 +97,7 @@ enum ExportDiagnostics {
             _ = try await service.exportPendingRecording(qualityPreset: .custom, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged), customMegabytes: .nan)
             throw failure("非法大小被接受。")
         } catch let error as CaptureError {
-            guard error.localizedDescription.contains("0.1") else { throw error }
+            guard error.localizedDescription.contains("极小") else { throw error }
         }
         for name in ["../越界", "a/b", ".hidden", "a:b", String(repeating: "名", count: 100)] {
             do { _ = try ExportPlanning.validatedName(name, fallback: "test"); throw failure("非法名称被接受。") }
