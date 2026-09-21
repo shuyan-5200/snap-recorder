@@ -2,6 +2,26 @@
 
 This document records reproducible project-level checks without retaining user recordings, window titles, personal paths, or private media.
 
+## v1.0.0 build 15: first 1.0 release package
+
+2026-09-21. The first 1.0 release packages the merged PR #9 feature source, without additional runtime changes from the verified local 0.5.1 candidate below. Version metadata, release notes and download links are advanced to 1.0.0 / build 15.
+
+- The Universal package was rebuilt for `x86_64 arm64`. Its own executable passed the complete generated-media self-test, including 30 fps, tiered/custom output, content/audio combinations, cancellation and repeat export, camera overlay and portrait regression checks.
+- The App reports 1.0.0 / build 15. Strict signature verification passed before and after ZIP extraction; the extracted executable is byte-identical to the build.
+- The ZIP contains only the executable, Info.plist, icon and signature resources. No recordings, audio, test media, logs or local user-home paths are packaged. ZIP SHA-256: `24e3959f2c722403bdb10d26836ea6542c0ee521e8857b7157464c3bcf23c858`.
+- This package validation does not claim a new real screen, microphone or camera acceptance pass; the tests use generated media.
+- Release CI, GitHub publication, public download and Pages deployment must be verified against this package before reporting publication complete.
+
+## v0.5.1 build 14: 30 fps export and custom-size guidance (local build)
+
+2026-09-21. Built from the merged PR #9 source at `3136efdd506521242aae0e9e6676a4b487e375c8`, with the bundle version advanced to 0.5.1 / build 14. This record covers the local package; GitHub publication and replacement of the installed App have not been performed.
+
+- Release compilation and the complete media self-test passed. The generated 1080p60 source exported at 30 fps for all four tiers: 4,281,006 / 1,872,349 / 613,887 / 191,104 bytes. These are synthetic fixture results, not a guaranteed real-world compression ratio.
+- Custom-size lower bounds and actual byte ceilings, naming, cancellation, retry, repeated exports, all content subsets/arrangements, audio isolation and alignment, camera overlay/mirroring/pause, and native portrait feature/background protection passed.
+- The Universal App contains `x86_64 arm64`, reports 0.5.1 / build 14, and passes strict signature verification before and after ZIP extraction. The extracted executable is byte-identical to the packaged build.
+- The ZIP contains exactly the executable, Info.plist, icon and signature resources. No recordings, audio, test media or logs are included, and the executable contains no local user-home path. ZIP SHA-256: `1bebd35688f05820217db17bff53bbcf902bd276034508bf2d6d409a799fb1bd`.
+- The merged feature commit passed GitHub CI before packaging. No new live screen, microphone or camera acceptance is claimed for this version.
+
 ## v0.5.0 build 13: simplified export and shareable main panel
 
 2026-09-19. Build 13 supersedes the local build 12 below. The installed `/Applications/Snap Recorder.app` matches the verified Universal 2 executable and passes strict signature verification. The previous local App is preserved in the dated rollback folder.
