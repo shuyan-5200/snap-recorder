@@ -6,7 +6,7 @@
   <p>
     <a href="https://shuyan-5200.github.io/snap-recorder/"><strong>产品介绍</strong></a>
     &nbsp; · &nbsp;
-    <a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v0.5.0/Snap-Recorder-v0.5.0-macOS-universal.zip"><strong>下载 0.5.0</strong></a>
+    <a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v1.0.0/Snap-Recorder-v1.0.0-macOS-universal.zip"><strong>下载 1.0.0</strong></a>
     &nbsp; · &nbsp;
     <a href="https://github.com/shuyan-5200/snap-recorder/releases/latest">版本与更新</a>
   </p>
@@ -94,11 +94,11 @@
 
 ## 安装
 
-1. [下载 0.5.0 安装包](https://github.com/shuyan-5200/snap-recorder/releases/download/v0.5.0/Snap-Recorder-v0.5.0-macOS-universal.zip)，解压后把 `Snap Recorder.app` 拖入“应用程序”。
+1. [下载 1.0.0 安装包](https://github.com/shuyan-5200/snap-recorder/releases/download/v1.0.0/Snap-Recorder-v1.0.0-macOS-universal.zip)，解压后把 `Snap Recorder.app` 拖入“应用程序”。
 2. 首次启动允许“屏幕与系统音频录制”；需要人声或人像时，再分别允许麦克风与摄像头。
 3. 选择来源，开始录制。
 
-支持 **macOS 14+**、Apple Silicon 与 Intel Mac；**人声录制需要 macOS 15+**。当前版本为 **0.5.0 / build 13**，Universal ZIP 约 **2.2 MB**。[查看发布记录与历史版本](https://github.com/shuyan-5200/snap-recorder/releases)。
+支持 **macOS 14+**、Apple Silicon 与 Intel Mac；**人声录制需要 macOS 15+**。当前版本为 **1.0.0 / build 15**，Universal ZIP 约 **2.2 MB**。[查看发布记录与历史版本](https://github.com/shuyan-5200/snap-recorder/releases)。
 
 应用尚未经过 Apple 公证。首次启动若被 macOS 拦截，请右键应用选择“打开”；仍被拦截时，前往“系统设置”→“隐私与安全性”→“仍要打开”。
 
