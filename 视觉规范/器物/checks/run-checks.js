@@ -239,7 +239,7 @@ const pairs = [
   ['石墨字 / 信号橙键面', T('--graphite'), T('--signal'), '信号橙', '石墨字于橙键 4.6:1', 4.5],
   ['警示 / 铝', T('--warn'), T('--alu'), '警示', '对铝 5.3:1', 4.5],
   ['完成 / 铝', T('--ok'), T('--alu'), '完成', '对铝 5.0:1', 4.5],
-  ['指示灯亮 / 灭（非文字）', T('--led-on'), T('--led-off'), '指示灯 · 亮', '对灭灯 4.3:1', 3],
+  ['指示灯亮 / 灭（非文字）', T('--led-on'), T('--led-off'), '指示灯 · 亮', '对灭灯 3.4:1', 3],
   ['深色大键：暖白字 / 键面最亮处', darkKeyText, darkKeyTop, null, '常态下对键面最亮处也在 10:1 以上', 10],
   ['刻字 / 未按下的键面最暗处（比例键）', T('--engrave'), rgb('#dedcd7'), null, null, 4.5],
   ['标注圆标字 / 铝上的淡蓝灰底', T('--anno-ink'), tint(T('--anno'), 0.1, T('--alu')), null, null, 4.5],
@@ -276,17 +276,21 @@ if (P) {
   const info = P.makeInfo({ mode: 'browser', windowKey: 'safari', duration: 134, hasSystemAudio: true, hasMicrophone: false });
   const merged = { tracks: new Set(['video', 'systemAudio']), arrangement: 'merged' };
   check(A6, '示例录制的体积估算', () => {
-    assert.strictEqual(P.estimateText(info, merged, 'balanced', null), '最高 1728 × 1080 · 30 帧 · 视频约 63.7 MB');
+    assert.strictEqual(P.estimateText(info, merged, 'balanced', null), '最高 1920 × 1200 · 30 帧 · 视频约 100.2 MB');
     assert.strictEqual(P.estimateText(info, merged, 'maximum', null), '2560 × 1600 · 30 帧 · 视频约 194.3 MB');
   });
-  check(A6, '竖屏局部录像按竖向上限适配', () => {
+  check(A6, '横竖录制都按原始像素比例递减', () => {
+    const balanced = P.plan({ size: { w: 3022, h: 1702 }, duration: 4, preset: 'balanced' }).size;
+    const compact = P.plan({ size: { w: 3022, h: 1702 }, duration: 4, preset: 'compact' }).size;
+    assert.strictEqual(`${balanced.w}x${balanced.h}`, '2264x1276');
+    assert.strictEqual(`${compact.w}x${compact.h}`, '1508x850');
     const portrait = P.makeInfo({ mode: 'region', ratio: '9:16', duration: 60, hasSystemAudio: false, hasMicrophone: true });
-    assert.ok(P.estimateText(portrait, { tracks: new Set(['video']), arrangement: 'separate' }, 'balanced', null).startsWith('最高 1080 × 1920 · 30 帧'));
+    assert.ok(P.estimateText(portrait, { tracks: new Set(['video']), arrangement: 'separate' }, 'balanced', null).startsWith('最高 810 × 1440 · 30 帧'));
   });
   check(A6, '自定义大小：建议范围、下限与上限内体积', () => {
-    assert.strictEqual(P.customGuidance(info, merged), '建议 7.7–194.3 MB · 最小值按“极小”档预算计算');
-    assert.strictEqual(P.validationMessage(info, merged, 'custom', '1', 'a'), '视频上限请输入 7.7–100000 MB，不应低于“极小”档的体积预算。');
-    assert.strictEqual(P.estimateText(info, merged, 'custom', 20), '最高 1152 × 720 · 30 帧 · 每个视频 ≤ 20.0 MB');
+    assert.strictEqual(P.customGuidance(info, merged), '建议 17.8–194.3 MB · 最小值按“极小”档预算计算');
+    assert.strictEqual(P.validationMessage(info, merged, 'custom', '1', 'a'), '视频上限请输入 17.8–100000 MB，不应低于“极小”档的体积预算。');
+    assert.strictEqual(P.estimateText(info, merged, 'custom', 20), '最高 530 × 330 · 30 帧 · 每个视频 ≤ 20.0 MB');
     assert.ok(P.fileBytesFor('mergedVideo', info, merged, 'custom', 20) <= 20e6);
   });
   check(A6, '名称与内容校验文案', () => {
@@ -421,8 +425,8 @@ check(A7, '尺寸表与圆角和样式一致', () => {
     if (!html.includes(`行程 ${travel}`) || !html.includes('四周留 3，与槽同心')) problems.push('控件说明没有写拨杆行程与同心');
   }
   expect('通道', '指示灯 6', [['.switch::before', 'width', '6px'], ['.led', 'width', '6px']]);
-  expect('键', '录制键 48 · 深色大键 44 · 普通键 32 · 小键 24 · 键帽 18',
-    [['.key-rec', 'height', '48px'], ['.key-dark', 'height', '44px'], ['.key', 'height', '32px'], ['.key-small', 'height', '24px'], ['kbd', 'height', '18px']]);
+  expect('键', '录制键 44 · 深色大键 44 · 普通键 32 · 小键 24 · 键帽 18',
+    [['.key-rec', 'height', '44px'], ['.key-dark', 'height', '44px'], ['.key', 'height', '32px'], ['.key-small', 'height', '24px'], ['kbd', 'height', '18px']]);
   expect('浮窗', '倒计时 174 × 174', [['.countdown', 'width', '174px'], ['.countdown', 'height', '174px']]);
   expect('浮窗', '控制条 274 × 54，距顶 18', [['.hud', 'width', '274px'], ['.hud', 'height', '54px'], ['.hud', 'top', '18px']]);
   expect('浮窗', '人像样式面板宽 354', [['.sheet', 'width', '354px']]);
@@ -509,16 +513,16 @@ if (pageLoaded) {
     assert.strictEqual(attr('.source-tab[data-mode="browser"]', 'aria-checked'), 'true');
     assert.strictEqual(attr('#setup-window', 'data-mode'), 'browser');
   });
-  check(B1, '示例导出页：日常、合并、未录人声不可勾选、默认名称，滑块停在“日常”', () => {
-    assert.strictEqual(attr('[data-seg="quality"] [data-value="balanced"]', 'aria-checked'), 'true');
-    assert.strictEqual(attr('[data-seg="quality"]', 'data-value'), 'balanced');
+  check(B1, '示例导出页：高清、合并、未录人声不可勾选、默认名称，滑块停在“高清”', () => {
+    assert.strictEqual(attr('[data-seg="quality"] [data-value="maximum"]', 'aria-checked'), 'true');
+    assert.strictEqual(attr('[data-seg="quality"]', 'data-value'), 'maximum');
     assert.strictEqual(attr('[data-seg="arrangement"] [data-value="merged"]', 'aria-checked'), 'true');
     assert.ok($('input[data-track="voice"]').disabled);
     assert.ok($('label[data-track-label="voice"]').classList.contains('is-disabled'));
     assert.strictEqual($('label[data-track-label="voice"]').title, '未录制人声');
     assertKeysInSync();
     assert.strictEqual($('#exp-name').value, 'Snap 录屏 2026-09-28 20.31.07');
-    assert.strictEqual(text('#exp-estimate'), '最高 1728 × 1080 · 30 帧 · 视频约 63.7 MB');
+    assert.strictEqual(text('#exp-estimate'), '2560 × 1600 · 30 帧 · 视频约 194.3 MB');
     return trackKeys().join('、');
   });
 

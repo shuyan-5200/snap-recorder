@@ -10,13 +10,18 @@ enum CameraPortraitDiagnostics {
     private static let context = CIContext(options: [.useSoftwareRenderer: false])
     private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private static let extent = CGRect(x: 0, y: 0, width: 320, height: 240)
+    // The active Core Image filter graph can round an 8-bit color channel by
+    // one level even with a black mask. Alpha and bypass paths remain exact.
+    private static let protectedColorTolerance = 1
+    private static let backgroundSampleColumns = [5, 6, 7, 8, 9, 10, 309, 310, 311, 312]
 
     static func run() throws -> String {
         try validateSettingsAndIdentity()
+        try validateProtectionComparison()
         try validateSkinMaskAndRendering()
         try validateNoiseReductionAndFeatureEdges()
         try validateDetectionLifecycle()
-        return "native portrait original/natural/soft presets, cheek noise reduction, feature/background protection and face-loss recovery passed"
+        return "native portrait original/natural/soft presets, cheek noise reduction, quantization-safe feature/background protection, blur/edge-shift/alpha negative controls and face-loss recovery passed"
     }
 
     private static func validateSettingsAndIdentity() throws {
@@ -67,7 +72,7 @@ enum CameraPortraitDiagnostics {
         let settings = CameraPortraitSettings(preset: .soft)
         let corrected = CameraPortraitProcessor.render(source, settings: settings, mask: mask)
         guard corrected.extent == source.extent,
-              protectedPoints.allSatisfy({ pixel(source, at: $0) == pixel(corrected, at: $0) }),
+              protectedPoints.allSatisfy({ protectedPixelMatches(pixel(source, at: $0), pixel(corrected, at: $0)) }),
               pixel(source, at: cheek) != pixel(corrected, at: cheek) else {
             throw failure("自然修饰没有生效，或改动了画布、背景或五官像素。")
         }
@@ -79,16 +84,102 @@ enum CameraPortraitDiagnostics {
         guard difference(low) <= difference(corrected), difference(corrected) < 30 else {
             throw failure("自然修饰强度不连续或档位校正过重。")
         }
-        // Even a high-contrast edge outside the face must remain byte-identical.
+        // Allow color quantization, but keep the edge position and contrast.
         let originalPixels = pixels(source)
-        let correctedPixels = pixels(corrected)
+        for image in [low, corrected] {
+            guard backgroundIsProtected(originalPixels, pixels(image)) else {
+                throw failure("自然修饰模糊或移动了画面背景边缘。")
+            }
+        }
+        let blackMask = CIImage(color: .black).cropped(to: extent)
+        for preset in [CameraPortraitPreset.natural, .soft] {
+            let inactive = CameraPortraitProcessor.render(source, settings: .init(preset: preset), mask: blackMask)
+            let inactivePixels = pixels(inactive)
+            guard stride(from: 0, to: originalPixels.count, by: 4).allSatisfy({
+                protectedPixelMatches(originalPixels, inactivePixels, at: $0)
+            }) else {
+                throw failure("全黑蒙版仍改动了人像画面。")
+            }
+        }
+    }
+
+    private static func protectedPixelMatches(_ original: [UInt8], _ corrected: [UInt8], at offset: Int = 0) -> Bool {
+        guard offset >= 0, original.count >= offset + 4, corrected.count >= offset + 4,
+              original[offset + 3] == corrected[offset + 3] else { return false }
+        return (0..<3).allSatisfy {
+            abs(Int(original[offset + $0]) - Int(corrected[offset + $0])) <= protectedColorTolerance
+        }
+    }
+
+    private static func backgroundIsProtected(_ original: [UInt8], _ corrected: [UInt8]) -> Bool {
+        let width = Int(extent.width)
+        guard original.count == width * Int(extent.height) * 4, corrected.count == original.count else { return false }
         for y in 0..<Int(extent.height) {
-            for x in [5, 6, 7, 8, 9, 10, 309, 310, 311, 312] {
+            for x in backgroundSampleColumns {
+                guard protectedPixelMatches(original, corrected, at: (y * width + x) * 4) else { return false }
+            }
+            for channel in 0..<3 {
+                func strongestEdge(_ samples: [UInt8]) -> (x: Int, contrast: Int) {
+                    var edge = (x: -1, contrast: -1)
+                    for x in 5..<10 {
+                        let offset = (y * width + x) * 4 + channel
+                        let contrast = abs(Int(samples[offset]) - Int(samples[offset + 4]))
+                        if contrast > edge.contrast { edge = (x, contrast) }
+                    }
+                    return edge
+                }
+                let before = strongestEdge(original)
+                let after = strongestEdge(corrected)
+                // Two independently rounded endpoints can change contrast by two.
+                guard before.x == after.x,
+                      abs(before.contrast - after.contrast) <= 2 * protectedColorTolerance else { return false }
+            }
+        }
+        return true
+    }
+
+    /// Positive/negative controls make sure the tolerance never hides real blur,
+    /// a shifted edge, excessive color change, or an altered transparency value.
+    private static func validateProtectionComparison() throws {
+        let source = fixtureImage()
+        let original = pixels(source)
+        guard backgroundIsProtected(original, original) else {
+            throw failure("背景保护比较拒绝了相同画面。")
+        }
+        var rounded = original
+        for y in 0..<Int(extent.height) {
+            for x in backgroundSampleColumns {
                 let offset = (y * Int(extent.width) + x) * 4
-                guard originalPixels[offset..<(offset + 4)] == correctedPixels[offset..<(offset + 4)] else {
-                    throw failure("自然修饰模糊了画面背景边缘。")
+                for channel in 0..<3 {
+                    rounded[offset + channel] = UInt8(max(0, Int(original[offset + channel]) - 1))
                 }
             }
+        }
+        var opposingRounding = original
+        for y in 0..<Int(extent.height) {
+            for channel in 0..<3 {
+                let left = (y * Int(extent.width) + 7) * 4 + channel
+                opposingRounding[left] -= 1
+                opposingRounding[left + 4] += 1
+            }
+        }
+        guard backgroundIsProtected(original, rounded), backgroundIsProtected(original, opposingRounding) else {
+            throw failure("背景保护比较将一个色阶的取整误差判为模糊。")
+        }
+        let probe = (120 * Int(extent.width) + 8) * 4
+        var excessiveColor = original
+        excessiveColor[probe] -= 2
+        var changedAlpha = original
+        changedAlpha[probe + 3] -= 1
+        let blurred = source.clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 2.0]).cropped(to: extent)
+        let shifted = source.clampedToExtent()
+            .transformed(by: CGAffineTransform(translationX: 1, y: 0)).cropped(to: extent)
+        guard !backgroundIsProtected(original, excessiveColor),
+              !backgroundIsProtected(original, changedAlpha),
+              !backgroundIsProtected(original, pixels(blurred)),
+              !backgroundIsProtected(original, pixels(shifted)) else {
+            throw failure("背景保护比较漏掉了色偏、透明度变化、真实模糊或边缘移动。")
         }
     }
 
@@ -192,8 +283,8 @@ enum CameraPortraitDiagnostics {
             for y in Int(edge.minY - 1)...Int(edge.maxY) {
                 for x in Int(edge.minX - 1)...Int(edge.maxX) {
                     let point = CGPoint(x: x, y: y)
-                    guard pixel(source, at: point) == pixel(corrected, at: point),
-                          pixel(source, at: point) == pixel(soft, at: point) else {
+                    guard protectedPixelMatches(pixel(source, at: point), pixel(corrected, at: point)),
+                          protectedPixelMatches(pixel(source, at: point), pixel(soft, at: point)) else {
                         throw failure("自然修饰改变了眼睛或嘴唇的高对比边缘。")
                     }
                 }

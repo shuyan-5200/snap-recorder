@@ -12,6 +12,8 @@ enum RecordingDiagnostics {
     }
 
     static func run() async throws -> String {
+        let interfaceReport = try InterfaceFeedbackDiagnostics.run()
+        if CommandLine.arguments.contains("--interface-only") { return interfaceReport }
         if CommandLine.arguments.contains("--export-only") { return try await ExportDiagnostics.run() }
         if CommandLine.arguments.contains("--audio-only") { return try await validateVoiceExport() }
         try validateCaptureSizing()
@@ -167,12 +169,16 @@ enum RecordingDiagnostics {
             .loadTracks(withMediaType: .video).first?.load(.naturalSize) ?? .zero
         let compactAttributes = try fileManager.attributesOfItem(atPath: compactURL.path)
         let compactFileSize = (compactAttributes[.size] as? NSNumber)?.intValue ?? 0
+        let expectedCompactSize = CaptureSizing.evenSize(
+            width: sourceSize.width * (RecordingQualityPreset.compact.resolutionScale ?? 1),
+            height: sourceSize.height * (RecordingQualityPreset.compact.resolutionScale ?? 1)
+        )
 
         guard maximumResult.urls.count == 1,
               compactResult.urls.count == 1,
               !maximumSignature.isEmpty,
               sourceSignature != compactSignature,
-              sourceSize == compactSize,
+              compactSize == expectedCompactSize,
               compactFileSize > 5_000,
               fileManager.fileExists(atPath: maximumSourceURL.path),
               fileManager.fileExists(atPath: compactSourceURL.path) else {

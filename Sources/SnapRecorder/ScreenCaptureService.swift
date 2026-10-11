@@ -106,6 +106,46 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         return window
     }
 
+    @MainActor
+    func availableDisplays() async throws -> [CaptureDisplayInfo] {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        return NSScreen.screens.compactMap { screen in
+            guard let id = ScreenPresentation.displayID(of: screen),
+                  let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            return CaptureDisplayInfo(id: id, name: screen.localizedName,
+                pixelSize: CGSize(width: filter.contentRect.width * CGFloat(filter.pointPixelScale),
+                                  height: filter.contentRect.height * CGFloat(filter.pointPixelScale)),
+                isPrimary: id == CGMainDisplayID())
+        }
+    }
+
+    /// Small, in-memory preview only; no stream, audio, cursor or file is created.
+    func displayThumbnail(displayID: CGDirectDisplayID) async throws -> CGImage {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            throw CaptureError.displayUnavailable
+        }
+        let processID = ProcessInfo.processInfo.processIdentifier
+        let filter: SCContentFilter
+        if let application = content.applications.first(where: { $0.processID == processID }) {
+            filter = SCContentFilter(display: display, excludingApplications: [application], exceptingWindows: [])
+        } else {
+            filter = SCContentFilter(display: display, excludingWindows:
+                content.windows.filter { $0.owningApplication?.processID == processID })
+        }
+        let configuration = SCStreamConfiguration()
+        let size = CaptureSizing.fit(source: filter.contentRect.size, inside: CGSize(width: 640, height: 360), allowUpscale: false)
+        configuration.width = Int(size.width)
+        configuration.height = Int(size.height)
+        configuration.showsCursor = false
+        configuration.capturesAudio = false
+        configuration.scalesToFit = true
+        configuration.preservesAspectRatio = true
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+    }
+
     static func displayFilter(display: SCDisplay, content: SCShareableContent, mainPanel: SCWindow?) throws -> SCContentFilter {
         let processID = ProcessInfo.processInfo.processIdentifier
         guard let ownApplication = content.applications.first(where: { $0.processID == processID })
@@ -176,10 +216,9 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             mouseCaptureRect = window.frame
 
         case .display:
-            let mainDisplayID = CGMainDisplayID()
-            guard let display = content.displays.first(where: { $0.displayID == mainDisplayID })
-                ?? content.displays.first else {
-                throw CaptureError.noDisplay
+            guard let displayID = request.displayID else { throw CaptureError.noDisplay }
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw CaptureError.displayUnavailable
             }
 
             filter = try Self.displayFilter(display: display, content: content, mainPanel: mainPanel)
@@ -487,8 +526,9 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                     )
                 }
                 let initialPlan = try plan()
-                let byteCeiling: Int64? = qualityPreset == .maximum ? nil
-                    : initialPlan.byteLimit ?? ExportPlanning.estimatedByteCeiling(for: initialPlan, duration: info.duration)
+                // Presets promise pixel ratios and show an approximate size.
+                // Only a user-entered custom limit is a hard byte ceiling.
+                let byteCeiling = initialPlan.byteLimit
                 var scale = 1.0, resolutionScale = 1.0
                 for attempt in 0..<4 {
                     let currentPlan = try plan(scale: scale, resolutionScale: resolutionScale)
@@ -538,7 +578,12 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                     }
                     let ratio = Double(limit) / Double(bytes)
                     scale *= ratio * 0.85
-                    resolutionScale *= min(0.9, sqrt(ratio) * 0.95)
+                    // Fixed presets promise a percentage of the source pixels.
+                    // A bitrate estimate may need retrying, but must never
+                    // silently shrink the dimensions selected by the user.
+                    if qualityPreset == .custom {
+                        resolutionScale *= min(0.9, sqrt(ratio) * 0.95)
+                    }
                     try FileManager.default.removeItem(at: video)
                     if result != video { try FileManager.default.removeItem(at: result) }
                     stagedVideo = nil

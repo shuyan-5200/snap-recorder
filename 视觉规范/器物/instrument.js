@@ -18,6 +18,7 @@
     custom: { title: '自定义', audio: 96000 }
   };
   const SOURCE_FRACTION = { maximum: 1, balanced: 0.5, compact: 0.2, tiny: 0.08, custom: 1 };
+  const RESOLUTION_SCALE = { maximum: 1, balanced: 0.75, compact: 0.5, tiny: 0.25 };
   const TRACK_TITLES = { video: '视频', systemAudio: '电脑声音', voice: '人声' };
   const TRACK_ORDER = ['video', 'systemAudio', 'voice'];
 
@@ -61,17 +62,20 @@
     }
     const hasAudio = !!(o.hasSystemAudio || o.includesCombinedVoice);
     const audioRate = hasAudio ? PRESETS[o.preset].audio : 0;
+    const nativeBitrate = Math.max(1e6, Math.min(32e6, Math.trunc(src.w * src.h * 5.8)));
     let bounds;
     let bitrate;
     let limit = null;
     switch (o.preset) {
       case 'maximum':
-        bounds = { w: src.w, h: src.h };
-        bitrate = Math.max(1e6, Math.min(32e6, Math.trunc(src.w * src.h * 5.8)));
+      case 'balanced':
+      case 'compact':
+      case 'tiny': {
+        const scale = RESOLUTION_SCALE[o.preset];
+        bounds = evenSize(src.w * scale, src.h * scale);
+        bitrate = Math.max(80000, Math.trunc(nativeBitrate * SOURCE_FRACTION[o.preset]));
         break;
-      case 'balanced': bounds = { w: 1920, h: 1080 }; bitrate = 4e6; break;
-      case 'compact': bounds = { w: 1280, h: 720 }; bitrate = 1.2e6; break;
-      case 'tiny': bounds = { w: 854, h: 480 }; bitrate = 4e5; break;
+      }
       case 'custom': {
         const rec = customRecommendation(o);
         const mb = o.customMB;
@@ -92,23 +96,14 @@
         const budget = (limit * 0.94 - 16384) * 8 / o.duration - audioRate;
         if (budget < 80000) throw fail('这个体积不足以保存完整录制，请提高大小上限。');
         bitrate = Math.min(32e6, Math.trunc(budget));
-        if (bitrate >= 10e6) bounds = { w: src.w, h: src.h };
-        else if (bitrate >= 2.4e6) bounds = { w: 1920, h: 1080 };
-        else if (bitrate >= 8e5) bounds = { w: 1280, h: 720 };
-        else if (bitrate >= 2.5e5) bounds = { w: 854, h: 480 };
-        else if (bitrate >= 1.6e5) bounds = { w: 480, h: 270 };
-        else bounds = { w: 320, h: 180 };
+        const scale = Math.min(1, Math.max(0.125, Math.sqrt(bitrate / nativeBitrate)));
+        bounds = evenSize(src.w * scale, src.h * scale);
         break;
       }
       default:
         throw fail('未知的视频大小档位。');
     }
-    if (o.preset !== 'maximum' && src.h > src.w && bounds.w > bounds.h) bounds = { w: bounds.h, h: bounds.w };
     const size = fit(src, bounds, false);
-    if (o.preset !== 'maximum' && o.preset !== 'custom') {
-      const fraction = (size.w * size.h) / (bounds.w * bounds.h);
-      bitrate = Math.trunc(bitrate * Math.max(0.2, fraction));
-    }
     if (Number.isFinite(o.sourceVideoBitrate) && o.sourceVideoBitrate > 0) {
       bitrate = Math.min(bitrate, Math.max(80000, Math.trunc(o.sourceVideoBitrate * SOURCE_FRACTION[o.preset])));
     }
@@ -370,7 +365,7 @@
     demoKind: 'va',
     tracks: new Set(),
     arrangement: 'merged',
-    preset: 'balanced',
+    preset: 'maximum',
     customMB: '20',
     name: '',
     view: 'choose', // choose | progress
@@ -1048,7 +1043,7 @@
     X.origin = origin;
     X.tracks = new Set(info.available);
     X.arrangement = X.tracks.has('voice') ? 'separate' : 'merged';
-    X.preset = 'balanced';
+    X.preset = 'maximum';
     X.error = null;
     X.outputs = [];
     X.name = outputStem(date);

@@ -38,6 +38,7 @@ enum Instrument {
     // 字
     static let graphite = Color(hex: 0x232322)
     static let ink2 = Color(hex: 0x434240)
+    static let buttonText = Color(hex: 0x333330)
     static let engrave = Color(hex: 0x555350)
     static let disabled = Color(hex: 0x8E8C86)
 
@@ -49,18 +50,28 @@ enum Instrument {
     // 信号与状态
     static let signal = Color(hex: 0xEE5A24)
     static let signalDeep = Color(hex: 0xB8430F)
-    static let ledOn = Color(hex: 0xFFF3CF)
+    static let ledOn = Color(hex: 0xA8EB8A)
+    static let ledGlow = ledOn.opacity(0.6)
     static let ledOff = Color(hex: 0x75736E)
     static let ledRing = Color(hex: 0x3A3936)
     static let warn = Color(hex: 0x7A4300)
     static let ok = Color(hex: 0x2A5E39)
 
+    static let actionHeight: CGFloat = 44
+    static let channelIndicatorSpacing: CGFloat = 5
+
     /// 暗色键上的暖白字。
     static let darkKeyText = Color(hex: 0xF4F2EE)
 
-    static func din(_ size: CGFloat) -> Font { .custom("DINAlternate-Bold", size: size) }
-    static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+    // Interface text grows together; primary action captions retain their size.
+    static let interfaceTextIncrement: CGFloat = 1
+    static func textSize(_ size: CGFloat) -> CGFloat { size + interfaceTextIncrement }
+    static func text(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: textSize(size), weight: weight)
+    }
+    static func din(_ size: CGFloat) -> Font { .custom("DINAlternate-Bold", size: textSize(size)) }
+    static func mono(_ size: CGFloat, weight: Font.Weight = .regular, adjustsForInterface: Bool = true) -> Font {
+        .system(size: adjustsForInterface ? textSize(size) : size, weight: weight, design: .monospaced)
     }
 
     enum Motion {
@@ -248,7 +259,7 @@ struct LED: View {
     }
 
     private var glow: Color {
-        state == .rec ? Instrument.signal.opacity(0.5) : Color(hex: 0xFFF3CF, opacity: 0.6)
+        state == .rec ? Instrument.signal.opacity(0.5) : Instrument.ledGlow
     }
 }
 
@@ -281,6 +292,7 @@ struct Screw: View {
 /// 刻在键上的快捷键：1pt 刻线边、SF Mono 10。
 struct KeyCap: View {
     let text: String
+    var keepsOriginalTextSize = false
     var color: Color = Instrument.ink2
     var border: Color = Instrument.graphite.opacity(0.3)
     /// 行内提示里的小号键帽：高 16、SF Mono 9.5。
@@ -288,7 +300,7 @@ struct KeyCap: View {
 
     var body: some View {
         label
-            .font(Instrument.mono(compact ? 9.5 : 10, weight: .medium))
+            .font(Instrument.mono(compact ? 9.5 : 10, weight: .medium, adjustsForInterface: !keepsOriginalTextSize))
             .foregroundStyle(color)
             .padding(.leading, compact ? 4 : 5)
             .padding(.trailing, isCommandShortcut ? (compact ? 3 : 4) : (compact ? 4 : 5))
@@ -318,7 +330,7 @@ struct KeyCap: View {
     }
 }
 
-/// 模块刻字：苹方 500 · 11 / 14 · 字距 0.16em，下缘一道亮边像刻进铝面。
+/// 模块刻字：苹方 500 · 12 / 15 · 字距 0.16em，下缘一道亮边像刻进铝面。
 struct EngravedLabel: View {
     let text: String
 
@@ -326,11 +338,11 @@ struct EngravedLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .tracking(11 * 0.16)
+            .font(Instrument.text(11, weight: .medium))
+            .tracking(Instrument.textSize(11) * 0.16)
             .foregroundStyle(Instrument.engrave)
             .shadow(color: .white.opacity(0.55), radius: 0, x: 0, y: 1)
-            .frame(height: 14)
+            .frame(height: 15)
     }
 }
 
@@ -347,7 +359,7 @@ struct Nameplate: View {
                 .accessibilityLabel("Snap Recorder")
             Spacer(minLength: 8)
             Text("极简录制，高清保存")
-                .font(.system(size: 10.5))
+                .font(Instrument.text(10.5))
                 .tracking(10.5 * 0.08)
                 .foregroundStyle(Instrument.engrave)
             Screw()
@@ -388,6 +400,10 @@ struct KeyButtonStyle: ButtonStyle {
         case small
         /// 图标键：28 × 28。
         case icon
+        /// 大操作旁的方形图标键：44 × 44，与保存键等高。
+        case actionIcon
+        /// 带文字的次要操作：与保存键等高，沿用浅色实体键。
+        case secondaryAction
         /// 控制条上的键：30 × 30。
         case hud
         /// 互锁键：高 30，圆角 6，带灯。
@@ -398,9 +414,11 @@ struct KeyButtonStyle: ButtonStyle {
         case ratio
         /// 方键：高 40，圆角 6，人像位置等带图示的选项。
         case tile
+        /// 显示器编号：28 × 28，与刷新键同尺寸，点击区为 40 × 40。
+        case displayNumber
         /// 深色大键：高 44，圆角 10，确认动作。
         case dark
-        /// 录制键：高 48，圆角 10，整块面板唯一的橙色。
+        /// 录制键：高 44，与保存键一致；圆角 10，整块面板唯一的橙色。
         case record
     }
 
@@ -433,9 +451,18 @@ private struct KeyBody<Label: View>: View {
 
     private var down: Bool { isEnabled && (isPressed || isLatched) }
 
+    @ViewBuilder
     var body: some View {
+        if kind == .displayNumber {
+            key.frame(width: 40, height: 40).contentShape(Rectangle())
+        } else {
+            key
+        }
+    }
+
+    private var key: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        label
+        return label
             .font(font)
             .lineLimit(1)
             .foregroundStyle(textColor)
@@ -480,20 +507,23 @@ private struct KeyBody<Label: View>: View {
         case .regular: 32
         case .small: 24
         case .icon: 28
+        case .actionIcon, .secondaryAction: Instrument.actionHeight
         case .hud: 30
         case .segment: 30
         case .segmentMini: 22
         case .ratio: 46
         case .tile: 40
-        case .dark: 44
-        case .record: 48
+        case .displayNumber: 28
+        case .dark, .record: Instrument.actionHeight
         }
     }
 
     private var fixedWidth: CGFloat? {
         switch kind {
         case .icon: 28
+        case .actionIcon: Instrument.actionHeight
         case .hud: 30
+        case .displayNumber: 28
         default: nil
         }
     }
@@ -504,10 +534,11 @@ private struct KeyBody<Label: View>: View {
         switch kind {
         case .regular: 14
         case .small: 9
-        case .icon, .hud, .ratio: 0
+        case .icon, .actionIcon, .hud, .ratio, .displayNumber: 0
         case .segment: 12
         case .segmentMini: 8
         case .tile: 10
+        case .secondaryAction: 10
         case .dark, .record: 16
         }
     }
@@ -515,17 +546,17 @@ private struct KeyBody<Label: View>: View {
     private var radius: CGFloat {
         switch kind {
         case .small, .segmentMini, .ratio: 3
-        case .regular, .icon, .hud, .segment, .tile: 6
-        case .dark, .record: 10
+        case .regular, .icon, .hud, .segment, .tile, .displayNumber: 6
+        case .dark, .record, .actionIcon, .secondaryAction: 10
         }
     }
 
     private var font: Font {
         switch kind {
         case .dark, .record: .system(size: 15, weight: .semibold)
-        case .segmentMini: .system(size: 11, weight: .semibold)
+        case .segmentMini: Instrument.text(11, weight: .semibold)
         case .ratio: Instrument.din(11)
-        default: .system(size: 12, weight: .semibold)
+        default: Instrument.text(12, weight: .semibold)
         }
     }
 
@@ -550,9 +581,9 @@ private struct KeyBody<Label: View>: View {
         guard isEnabled else { return Instrument.disabled }
         switch kind {
         case .dark: return Instrument.darkKeyText
-        case .segment, .segmentMini, .tile: return down ? Instrument.graphite : Instrument.ink2
-        case .ratio: return down ? Instrument.graphite : (isHovering ? Instrument.ink2 : Instrument.engrave)
-        default: return Instrument.graphite
+        case .segment, .segmentMini, .tile: return down ? Instrument.buttonText : Instrument.ink2
+        case .ratio: return down ? Instrument.buttonText : (isHovering ? Instrument.ink2 : Instrument.engrave)
+        default: return Instrument.buttonText
         }
     }
 
@@ -621,21 +652,23 @@ struct SlideSwitch: View {
     let title: String
     @Binding var isOn: Bool
     var isBusy = false
+    var indicatorSpacing: CGFloat = 3
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ title: String, isOn: Binding<Bool>, isBusy: Bool = false) {
+    init(_ title: String, isOn: Binding<Bool>, isBusy: Bool = false, indicatorSpacing: CGFloat = 3) {
         self.title = title
         _isOn = isOn
         self.isBusy = isBusy
+        self.indicatorSpacing = indicatorSpacing
     }
 
     var body: some View {
         Button {
             isOn.toggle()
         } label: {
-            HStack(spacing: 3) {
+            HStack(spacing: indicatorSpacing) {
                 LED(state: isOn ? .lit : .off)
                 ZStack(alignment: .leading) {
                     slot
@@ -720,6 +753,7 @@ struct SliderCap: View {
 struct LatchKey: View {
     let title: String
     let isOn: Bool
+    var fillsWidth = false
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -731,7 +765,7 @@ struct LatchKey: View {
                 Text(title)
             }
         }
-        .buttonStyle(KeyButtonStyle(kind: .segment, isLatched: isOn))
+        .buttonStyle(KeyButtonStyle(kind: .segment, isLatched: isOn, fillsWidth: fillsWidth))
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "已选" : "未选")
         .accessibilityAddTraits(.isToggle)
@@ -902,31 +936,57 @@ struct FivePositionSlider<Option: Hashable>: View {
     private var selectedIndex: Int { options.firstIndex(of: selection) ?? 0 }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(options, id: \.self) { option in
-                let selected = option == selection
-                Button {
-                    select(option)
-                } label: {
-                    Text(title(option))
-                        .font(.system(size: 11.5, weight: selected ? .bold : .medium))
-                        .foregroundStyle(selected ? Instrument.graphite : Instrument.engrave)
-                        .padding(.top, 26)
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .top)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(help(option))
-                .accessibilityLabel(title(option))
-                .accessibilityValue(selected ? "已选" : "未选")
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }
-        .background(alignment: .top) {
+        VStack(spacing: 4) {
+            trackControl
+
             GeometryReader { proxy in
                 let width = proxy.size.width
-                let trackStart = width * 0.1
-                let trackWidth = width * 0.8
+                let inset = trackInset(for: width)
+                let steps = CGFloat(max(1, options.count - 1))
+                let stepWidth = max(0, width - 2 * inset) / steps
+                ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                    let selected = option == selection
+                    let atEdge = index == 0 || index == options.count - 1
+                    Button {
+                        select(option)
+                    } label: {
+                        Text(title(option))
+                            .font(Instrument.text(11.5, weight: selected ? .bold : .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .foregroundStyle(selected ? Instrument.buttonText : Instrument.engrave)
+                            .frame(width: atEdge ? 2 * inset : stepWidth, height: 22, alignment: .top)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(help(option))
+                    .accessibilityLabel(title(option))
+                    .accessibilityValue(selected ? "已选" : "未选")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .position(x: inset + stepWidth * CGFloat(index), y: 11)
+                }
+            }
+            .frame(height: 22)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityTitle)
+        .onMoveCommand { direction in
+            switch direction {
+            case .left where selectedIndex > 0: select(options[selectedIndex - 1])
+            case .right where selectedIndex < options.count - 1: select(options[selectedIndex + 1])
+            default: break
+            }
+        }
+    }
+
+    // Just enough room for the end labels; ticks, thumb and labels share anchors.
+    private func trackInset(for width: CGFloat) -> CGFloat { min(19, width / 2) }
+
+    private var trackControl: some View {
+        GeometryReader { proxy in
+                let width = proxy.size.width
+                let trackStart = trackInset(for: width)
+                let trackWidth = max(0, width - 2 * trackStart)
                 let steps = CGFloat(max(1, options.count - 1))
                 ZStack(alignment: .topLeading) {
                     let track = RoundedRectangle(cornerRadius: 3, style: .continuous)
@@ -948,20 +1008,20 @@ struct FivePositionSlider<Option: Hashable>: View {
                         .offset(x: trackStart + trackWidth * CGFloat(selectedIndex) / steps - 9, y: 2)
                         .animation(reduceMotion ? nil : Instrument.Motion.slide, value: selectedIndex)
                 }
-            }
-            .frame(height: 22)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+                .frame(width: width, height: 22, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard !options.isEmpty, trackWidth > 0 else { return }
+                            let position = (value.location.x - trackStart) / trackWidth
+                            let index = min(options.count - 1, max(0, Int((position * steps).rounded())))
+                            if index != selectedIndex { select(options[index]) }
+                        }
+                )
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityTitle)
-        .onMoveCommand { direction in
-            switch direction {
-            case .left where selectedIndex > 0: select(options[selectedIndex - 1])
-            case .right where selectedIndex < options.count - 1: select(options[selectedIndex + 1])
-            default: break
-            }
-        }
+        .frame(height: 22)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1018,7 +1078,7 @@ struct ChaserLights: View {
                     Circle()
                         .fill(index == litIndex ? Instrument.ledOn : Color(hex: 0x3F3E3B))
                         .frame(width: 7, height: 7)
-                        .shadow(color: index == litIndex ? Color(hex: 0xFFF3CF, opacity: 0.6) : .clear, radius: 2)
+                        .shadow(color: index == litIndex ? Instrument.ledGlow : .clear, radius: 2)
                 }
             }
             .padding(.vertical, 9)
@@ -1036,32 +1096,33 @@ struct GrooveField: ViewModifier {
     var isInvalid = false
     var monospaced = false
 
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var isFocused: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         content
             .textFieldStyle(.plain)
-            .font(monospaced ? Instrument.mono(12.5) : .system(size: 12.5))
-            .foregroundStyle(Instrument.graphite)
+            .font(monospaced ? Instrument.mono(12.5) : Instrument.text(12.5))
+            .foregroundStyle(isEnabled ? Instrument.graphite : Instrument.disabled)
             .focused($isFocused)
             .padding(.horizontal, 10)
             .frame(height: 32)
             .background {
                 shape
-                    .fill(Instrument.aluHi)
-                    .overlay { InnerShadow(shape: shape, color: .black.opacity(0.14), radius: 1, y: 1) }
+                    .fill(isEnabled ? Instrument.aluHi : Instrument.aluLo)
+                    .overlay { InnerShadow(shape: shape, color: .black.opacity(isEnabled ? 0.14 : 0.08), radius: 1, y: 1) }
             }
             .overlay {
-                shape.strokeBorder(isInvalid ? Instrument.warn : Instrument.graphite.opacity(0.24), lineWidth: 1)
+                shape.strokeBorder(isEnabled && isInvalid ? Instrument.warn : Instrument.graphite.opacity(isEnabled ? 0.24 : 0.14), lineWidth: 1)
             }
             .overlay {
-                if isInvalid {
+                if isEnabled && isInvalid {
                     shape.inset(by: -1).strokeBorder(Instrument.warn, lineWidth: 1)
                 }
             }
             .overlay {
-                if isFocused {
+                if isEnabled && isFocused {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(Instrument.graphite, lineWidth: 2)
                         .padding(-4)
@@ -1089,8 +1150,8 @@ private struct LinkTextBody<Label: View>: View {
 
     var body: some View {
         label
-            .font(.system(size: size, weight: .medium))
-            .foregroundStyle(isEnabled ? (isPressed ? Instrument.graphite : Instrument.ink2) : Instrument.disabled)
+            .font(Instrument.text(size, weight: .medium))
+            .foregroundStyle(isEnabled ? (isPressed ? Instrument.buttonText : Instrument.ink2) : Instrument.disabled)
             .underline(isHovering && isEnabled)
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }

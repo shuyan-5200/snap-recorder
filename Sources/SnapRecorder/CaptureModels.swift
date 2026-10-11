@@ -146,11 +146,30 @@ enum RecordingQualityPreset: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .maximum: "原始尺寸 · 30 帧"
-        case .balanced: "最高 1080p · 30 帧"
-        case .compact: "最高 720p · 30 帧"
-        case .tiny: "最高 480p · 30 帧"
-        case .custom: "按大小上限适配尺寸 · 30 帧"
+        case .maximum: "原始像素 100% · 30 帧"
+        case .balanced: "原始像素 75% · 30 帧"
+        case .compact: "原始像素 50% · 30 帧"
+        case .tiny: "原始像素 25% · 30 帧"
+        case .custom: "按大小上限等比适配 · 30 帧"
+        }
+    }
+
+    var resolutionScale: CGFloat? {
+        switch self {
+        case .maximum: 1
+        case .balanced: 0.75
+        case .compact: 0.5
+        case .tiny: 0.25
+        case .custom: nil
+        }
+    }
+
+    var videoBitrateFraction: Double {
+        switch self {
+        case .maximum, .custom: 1
+        case .balanced: 0.5
+        case .compact: 0.2
+        case .tiny: 0.08
         }
     }
 
@@ -187,6 +206,17 @@ struct CaptureWindowInfo: Identifiable, Equatable {
 
     var displayTitle: String {
         title.isEmpty ? "未命名窗口" : title
+    }
+}
+
+struct CaptureDisplayInfo: Identifiable, Equatable {
+    let id: CGDirectDisplayID
+    let name: String
+    let pixelSize: CGSize
+    let isPrimary: Bool
+
+    var detail: String {
+        "\(Int(pixelSize.width)) × \(Int(pixelSize.height))" + (isPrimary ? " · 主屏幕" : "")
     }
 }
 
@@ -232,6 +262,7 @@ struct MouseEffectSnapshot: Equatable {
 struct CaptureRequest {
     let mode: CaptureMode
     let windowID: CGWindowID?
+    let displayID: CGDirectDisplayID?
     let region: CaptureRegion?
     let focusMask: CaptureFocusMask?
     let captureCornerStyle: FocusMaskCornerStyle
@@ -246,6 +277,7 @@ struct CaptureRequest {
 enum CaptureError: LocalizedError {
     case permissionRequired
     case noDisplay
+    case displayUnavailable
     case noWindow
     case windowUnavailable
     case noCaptureRegion
@@ -267,6 +299,8 @@ enum CaptureError: LocalizedError {
             "需要先允许屏幕录制权限。"
         case .noDisplay:
             "没有找到可录制的显示器。"
+        case .displayUnavailable:
+            "选中的屏幕已经断开或不可用，请重新选择。"
         case .noWindow:
             "请先选择一个窗口。"
         case .windowUnavailable:

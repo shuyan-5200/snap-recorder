@@ -66,7 +66,7 @@
           <li>
             <span class="feature-no" aria-hidden="true">03</span>
             <h2>唯一的信号橙</h2>
-            <p>信号橙只给“开始录制”键、录制指示灯和录制中的刻度。其余全是铝、石墨与暖白指示灯。</p>
+            <p>信号橙只给“开始录制”键、录制指示灯和录制中的刻度。其余全是铝、石墨与绿色指示灯。</p>
           </li>
         </ol>
 
@@ -518,13 +518,13 @@
                   <div class="xrow xrow-stack" id="exp-size-row">
                     <p class="xlabel" id="lbl-quality">视频大小<span class="callout" aria-hidden="true">2</span></p>
                     <div class="xstack">
-                      <div class="stepper" role="radiogroup" aria-labelledby="lbl-quality" data-seg="quality" data-value="balanced">
+                      <div class="stepper" role="radiogroup" aria-labelledby="lbl-quality" data-seg="quality" data-value="maximum">
                         <span class="stepper-track" aria-hidden="true"><span class="stepper-thumb"></span></span>
-                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="maximum" title="原始尺寸 · 30 帧">高清</button>
-                        <button type="button" role="radio" aria-checked="true" data-value="balanced" title="最高 1080p · 30 帧">日常</button>
-                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="compact" title="最高 720p · 30 帧">小巧</button>
+                        <button type="button" role="radio" aria-checked="true" data-value="maximum" title="原始像素 100% · 30 帧">高清</button>
+                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="balanced" title="原始像素 75% · 30 帧">日常</button>
+                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="compact" title="原始像素 50% · 30 帧">小巧</button>
                         <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="tiny" title="适合随手记录，小字细节会减少">极小</button>
-                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="custom" title="按大小上限适配尺寸 · 30 帧">自定义</button>
+                        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-value="custom" title="按大小上限等比适配 · 30 帧">自定义</button>
                       </div>
                       <div class="custom-size" id="exp-custom" hidden>
                         <label class="inline-field"><span>视频上限</span><input class="input input-sm" id="exp-custom-mb" type="text" inputmode="decimal" autocomplete="off" aria-label="视频大小上限 MB"><span>MB</span></label>
@@ -660,7 +660,7 @@
             <p class="group-title">信号与状态</p>
             <div class="swatches">
               <figure class="swatch"><span class="swatch-color" style="--c:#EE5A24"></span><figcaption><b>信号橙</b><code>#EE5A24</code><span>只用于录制 · 石墨字于橙键 4.6:1</span></figcaption></figure>
-              <figure class="swatch"><span class="swatch-color swatch-led" style="--c:#FFF3CF"></span><figcaption><b>指示灯 · 亮</b><code>#FFF3CF</code><span>开启、选中 · 对灭灯 4.3:1</span></figcaption></figure>
+              <figure class="swatch"><span class="swatch-color swatch-led" style="--c:#A8EB8A"></span><figcaption><b>指示灯 · 亮</b><code>#A8EB8A</code><span>开启、选中 · 对灭灯 3.4:1</span></figcaption></figure>
               <figure class="swatch"><span class="swatch-color" style="--c:#75736E"></span><figcaption><b>指示灯 · 灭</b><code>#75736E</code><span>关闭、未选中</span></figcaption></figure>
               <figure class="swatch"><span class="swatch-color" style="--c:#7A4300"></span><figcaption><b>警示</b><code>#7A4300</code><span>权限与校验提醒 · 对铝 5.3:1</span></figcaption></figure>
               <figure class="swatch"><span class="swatch-color" style="--c:#2A5E39"></span><figcaption><b>完成</b><code>#2A5E39</code><span>已保存 · 对铝 5.0:1</span></figcaption></figure>
@@ -714,7 +714,7 @@
                 <tr><th scope="row">模块</th><td class="num">刻字 14 高、下距 10 · 模块上留 14、下留 16 · 模块间刻线 2（暗 1 + 亮 1）</td></tr>
                 <tr><th scope="row">来源</th><td class="num">旋钮 56 · 三个挡位各 20 高 · 细节区宽 338</td></tr>
                 <tr><th scope="row">通道</th><td class="num">四列等宽 · 列间 8 · 拨杆槽 36 × 20、钮 16 × 14 · 指示灯 6</td></tr>
-                <tr><th scope="row">键</th><td class="num">录制键 48 · 深色大键 44 · 普通键 32 · 小键 24 · 键帽 18</td></tr>
+                <tr><th scope="row">键</th><td class="num">录制键 44 · 深色大键 44 · 普通键 32 · 小键 24 · 键帽 18</td></tr>
                 <tr><th scope="row">浮窗</th><td class="num">倒计时 174 × 174 · 控制条 274 × 54，距顶 18 · 人像样式面板宽 354</td></tr>
               </tbody>
             </table>
@@ -753,7 +753,7 @@
                   <span class="key key-rec is-pressed"><span class="rec-lamp"></span><span class="key-label">开始录制</span><kbd class="key-cap">⌘R</kbd></span>
                   <span class="key key-rec is-disabled"><span class="rec-lamp"></span><span class="key-label">开始录制</span><kbd class="key-cap">⌘R</kbd></span>
                 </div>
-                <p class="ctrl-spec">常态 / 按下 / 禁用。高 48，圆角 10，橙色键面、石墨字 15/600，左侧刻一枚石墨圆点作录制符号；按下下沉 1pt，禁用时键面转铝暗、字转禁用色。</p>
+                <p class="ctrl-spec">常态 / 按下 / 禁用。高 44，与保存键等高，圆角 10，橙色键面、石墨字 15/600，左侧刻一枚石墨圆点作录制符号；按下下沉 1pt，禁用时键面转铝暗、字转禁用色。</p>
               </div>
               <div class="ctrl">
                 <p class="ctrl-name">深色大键</p>

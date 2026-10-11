@@ -7,16 +7,22 @@ import SwiftUI
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private weak var model: AppModel?
     private var mainWindow: NSWindow?
-    private var countdownPanel: NSPanel?
+    private var countdownPanels: [CGDirectDisplayID: NSPanel] = [:]
+    private var countdownNumber: Int?
     private var recordingPanel: NSPanel?
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
+    private var rememberedMainDisplayID: CGDirectDisplayID?
+    private var screenParametersObserver: NSObjectProtocol?
     private var lastExternalApplication: NSRunningApplication?
     private var activationObserver: NSObjectProtocol?
     private let regionOverlay = CaptureRegionOverlayController()
     private let windowHighlight = CaptureWindowHighlightController()
     private var windowPresentationGeneration = UUID()
+    private var mainWindowResizeTask: Task<Void, Never>?
     private var shortcutController: GlobalShortcutController?
     private let cameraPreview = CameraPreviewController()
+    private let countdownSound = CountdownSound()
 
     init(initialExternalApplication: NSRunningApplication?) {
         lastExternalApplication = initialExternalApplication
@@ -36,12 +42,26 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
                 self?.lastExternalApplication = application
             }
         }
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.model?.mode == .display { await self.model?.refreshDisplays() }
+                if let number = self.countdownNumber { self.presentCountdown(number: number) }
+                self.model?.updateCameraPreview()
+                if let panel = self.recordingPanel, panel.isVisible {
+                    self.position(panel: panel, size: panel.frame.size, topOffset: 18)
+                }
+            }
+        }
     }
 
     deinit {
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
+        if let screenParametersObserver { NotificationCenter.default.removeObserver(screenParametersObserver) }
     }
 
     func attach(model: AppModel) {
@@ -65,6 +85,30 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         return CGWindowID(mainWindow.windowNumber)
     }
 
+    var mainWindowDisplayID: CGDirectDisplayID? {
+        presentationScreen.flatMap(ScreenPresentation.displayID)
+    }
+
+    private var presentationScreen: NSScreen? {
+        mainWindow?.screen
+            ?? NSScreen.screens.first { ScreenPresentation.displayID(of: $0) == rememberedMainDisplayID }
+            ?? NSScreen.screens.first { ScreenPresentation.displayID(of: $0) == CGMainDisplayID() }
+            ?? NSScreen.screens.first
+    }
+
+    private func rememberMainScreen() {
+        if let screen = mainWindow?.screen { rememberedMainDisplayID = ScreenPresentation.displayID(of: screen) }
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard notification.object as? NSWindow === mainWindow else { return }
+        rememberMainScreen()
+        model?.updateCameraPreview()
+        if let panel = recordingPanel, panel.isVisible {
+            position(panel: panel, size: panel.frame.size, topOffset: 18)
+        }
+    }
+
     func showMainWindow() {
         guard let model else { return }
         let window: NSWindow
@@ -84,6 +128,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
         statusItem?.isVisible = true
         restoreInteractiveMainWindowLevel()
+        window.ignoresMouseEvents = false
         window.hidesOnDeactivate = false
         // Accessory apps can lose the ordering race when another normal-level
         // app (usually the selected capture target) is still active. LaunchServices
@@ -91,6 +136,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         // confirm the same one-time ordering action on the next run-loop turn.
         bringMainWindowForward(window)
         Self.installTitlebarDragSurface(on: window)
+        rememberMainScreen()
         Task { @MainActor [weak self, weak window] in
             // App activation is asynchronous. A short delayed confirmation
             // avoids LaunchServices returning focus to the previously active
@@ -103,11 +149,94 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func bringMainWindowForward(_ window: NSWindow) {
+        // A deferred launch/reopen must not cover or steal focus from an alert.
+        if let modalWindow = NSApp.modalWindow {
+            modalWindow.orderFrontRegardless()
+            modalWindow.makeKeyAndOrderFront(nil)
+            return
+        }
         NSApp.activate()
         // The persistent interactive level is managed separately; these calls
         // only make the currently requested main window active and frontmost.
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    func resizeMainWindowForDrawer(width: CGFloat, side: RecorderDrawerSide, animated: Bool) {
+        guard let window = mainWindow else { return }
+        mainWindowResizeTask?.cancel()
+        let initialWidth = window.frame.width
+        let expanding = width > initialWidth
+        let duration = expanding ? 0.42 : 0.32
+        mainWindowResizeTask = Task { @MainActor [weak window] in
+            guard let window else { return }
+            let began = ProcessInfo.processInfo.systemUptime
+            while !Task.isCancelled {
+                let elapsed = ProcessInfo.processInfo.systemUptime - began
+                let progress = animated ? min(1, elapsed / duration) : 1
+                // Critically damped easing: no bounce, a gentle start and a
+                // buffered stop. A reversal starts at the currently drawn size.
+                let eased = DrawerMotion.progress(at: progress)
+                let nextWidth = initialWidth + (width - initialWidth) * eased
+                var frame = window.frame
+                let fixedEdge = side == .left ? frame.maxX : frame.minX
+                frame.size.width = nextWidth
+                frame.origin.x = side == .left ? fixedEdge - nextWidth : fixedEdge
+                if let screen = window.screen {
+                    frame.origin.x = max(screen.visibleFrame.minX, min(frame.origin.x, screen.visibleFrame.maxX - nextWidth))
+                }
+                window.setFrame(frame, display: true)
+                if progress >= 1 { break }
+                do { try await Task.sleep(for: .milliseconds(16)) }
+                catch { break }
+            }
+        }
+    }
+
+    /// Every quit/save guard uses this route: an application-modal alert below
+    /// our screen-saver-level panels would swallow input while remaining hidden.
+    func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        let highestLevel = NSApp.windows
+            .filter(\.isVisible)
+            .map { $0.level.rawValue }
+            .max() ?? NSWindow.Level.floating.rawValue
+        let alertLevel = NSWindow.Level(rawValue: max(highestLevel, NSWindow.Level.modalPanel.rawValue) + 1)
+        alert.window.level = alertLevel
+        alert.window.hidesOnDeactivate = false
+        alert.window.sharingType = .none
+        alert.layout()
+        var placementObserver: NSObjectProtocol?
+        var placementTimer: Timer?
+        defer {
+            placementTimer?.invalidate()
+            if let placementObserver { NotificationCenter.default.removeObserver(placementObserver) }
+        }
+        // Pin both the initial frame and AppKit's deferred modal layout to the
+        // main panel's display, even when the capture target is on another one.
+        if let screen = presentationScreen {
+            let frame = ScreenPresentation.popupFrame(size: alert.window.frame.size,
+                near: mainWindow?.isVisible == true ? mainWindow?.frame : nil, in: screen.visibleFrame)
+            alert.window.setFrame(frame, display: false)
+            placementObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: alert.window, queue: .main
+            ) { [weak alert] _ in
+                guard let alert else { return }
+                alert.window.level = alertLevel
+                alert.window.setFrame(frame, display: true)
+            }
+            // runModal resets the alert to AppKit's modal-panel level after
+            // key-window notification. Apply our placement once its modal
+            // run loop has begun; the main queue alone does not run here.
+            placementTimer = Timer(timeInterval: 0.01, repeats: false) { [weak alert] _ in
+                guard let alert else { return }
+                alert.window.level = alertLevel
+                alert.window.setFrame(frame, display: true)
+                alert.window.makeKeyAndOrderFront(nil)
+            }
+            if let placementTimer { RunLoop.main.add(placementTimer, forMode: .modalPanel) }
+        }
+        NSApp.activate()
+        return alert.runModal()
     }
 
     /// Also used by the camera-free pointer-interaction test harness.
@@ -158,6 +287,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     ) -> CaptureRegion? {
         mainWindow?.level = .screenSaver
         return regionOverlay.show(
+            on: presentationScreen,
             aspectRatio: aspectRatio,
             captureCornerStyle: captureCornerStyle,
             focusMaskEnabled: focusMaskEnabled,
@@ -406,6 +536,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func prepareForCountdown(targetProcessID: pid_t?) {
         hideWindowSelection()
+        rememberMainScreen()
         mainWindow?.orderOut(nil)
         statusItem?.isVisible = false
 
@@ -415,16 +546,36 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func runCountdown(from start: Int) async throws {
-        let panel = countdownPanel ?? makeCountdownPanel()
-        countdownPanel = panel
-        position(panel: panel, size: CGSize(width: 174, height: 174), topOffset: nil)
-        defer { panel.orderOut(nil) }
+        defer {
+            countdownSound.stop()
+            countdownNumber = nil
+            countdownPanels.values.forEach { $0.orderOut(nil) }
+            countdownPanels.removeAll()
+        }
 
         for number in stride(from: start, through: 1, by: -1) {
             try Task.checkCancellation()
+            countdownNumber = number
+            presentCountdown(number: number)
+            countdownSound.playTick(number: number)
+            try await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    private func presentCountdown(number: Int) {
+        let screens = NSScreen.screens
+        let connected = Set(screens.compactMap(ScreenPresentation.displayID))
+        for id in countdownPanels.keys.filter({ !connected.contains($0) }) {
+            countdownPanels.removeValue(forKey: id)?.orderOut(nil)
+        }
+        for screen in screens {
+            guard let id = ScreenPresentation.displayID(of: screen) else { continue }
+            let panel = countdownPanels[id] ?? Self.makeCountdownPanel()
+            countdownPanels[id] = panel
+            // Use the whole display, not visibleFrame: exact visual center.
+            panel.setFrame(ScreenPresentation.centeredFrame(size: CGSize(width: 174, height: 174), in: screen.frame), display: true)
             panel.contentView = NSHostingView(rootView: CountdownView(number: number))
             panel.orderFrontRegardless()
-            try await Task.sleep(for: .seconds(1))
         }
     }
 
@@ -473,7 +624,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showCameraPreview(frames: CameraFrameStore, settings: CameraOverlaySettings) {
-        cameraPreview.show(frames: frames, settings: settings)
+        cameraPreview.show(frames: frames, settings: settings, on: presentationScreen)
     }
 
     func hideCameraPreview() {
@@ -487,7 +638,13 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         // alive until AppDelegate has applied the recording/export safeguards;
         // idle sessions terminate immediately, while protected states can
         // cancel without leaving an invisible menu-bar process behind.
-        NSApp.terminate(nil)
+        // Calling terminate synchronously from windowShouldClose re-enters the
+        // same AppKit close transaction; the following `false` can then cancel
+        // both operations. Leave the window alive for this event and start the
+        // guarded quit on the next main-loop turn instead.
+        DispatchQueue.main.async {
+            NSApp.terminate(nil)
+        }
         return false
     }
 
@@ -497,7 +654,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         }
     }
 
-    private func makeCountdownPanel() -> NSPanel {
+    static func makeCountdownPanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 174, height: 174),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -505,10 +662,13 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             defer: false
         )
         panel.level = .screenSaver
+        panel.title = "录制倒计时"
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.ignoresMouseEvents = true
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [
             .canJoinAllSpaces,
             .fullScreenAuxiliary,
@@ -523,7 +683,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func position(panel: NSPanel, size: CGSize, topOffset: CGFloat?) {
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        let screen = presentationScreen
         guard let screen else { return }
         let frame = screen.visibleFrame
         let origin: CGPoint
@@ -566,8 +726,20 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         )
         quitItem.target = self
         menu.addItem(quitItem)
-        item.menu = menu
+        statusMenu = menu
+        item.button?.target = self
+        item.button?.action = #selector(showStatusMenu)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
+    }
+
+    @objc private func showStatusMenu() {
+        guard let menu = statusMenu, let screen = presentationScreen else { return }
+        if let window = mainWindow, window.isVisible, let view = window.contentView {
+            menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.maxX - 16, y: view.bounds.maxY - 16), in: view)
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY - 8), in: nil)
+        }
     }
 
     @objc private func openSnapRecorder() {

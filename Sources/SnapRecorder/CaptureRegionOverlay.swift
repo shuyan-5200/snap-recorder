@@ -15,6 +15,7 @@ final class CaptureRegionOverlayController {
 
     @discardableResult
     func show(
+        on preferredScreen: NSScreen?,
         aspectRatio: CaptureAspectRatio,
         captureCornerStyle: FocusMaskCornerStyle,
         focusMaskEnabled: Bool,
@@ -26,8 +27,9 @@ final class CaptureRegionOverlayController {
         self.selectionChanged = selectionChanged
         self.focusMaskChanged = focusMaskChanged
 
-        let targetScreen = Self.mainDisplayScreen() ?? NSScreen.main ?? NSScreen.screens.first
+        let targetScreen = preferredScreen ?? Self.mainDisplayScreen() ?? NSScreen.screens.first
         guard let targetScreen else { return nil }
+        let changedScreen = screen.map { ScreenPresentation.displayID(of: $0) != ScreenPresentation.displayID(of: targetScreen) } ?? false
         screen = targetScreen
 
         let panel: NSPanel
@@ -35,6 +37,10 @@ final class CaptureRegionOverlayController {
         if let existingPanel = self.panel, let existingView = self.overlayView {
             panel = existingPanel
             overlayView = existingView
+            if changedScreen {
+                panel.setFrame(Self.initialFrame(on: targetScreen,
+                    aspectRatio: aspectRatio.fixedValue ?? CaptureAspectRatio.widescreen.fixedValue!), display: true)
+            }
         } else {
             let initialFrame = Self.initialFrame(
                 on: targetScreen,
@@ -877,7 +883,7 @@ private final class CaptureRegionOverlayView: NSView {
         }
         let text = "\(ratioTitle)  ·  \(instruction)"
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: Instrument.textSize(11), weight: .semibold),
             .foregroundColor: Overlay.graphite
         ]
         let textSize = text.size(withAttributes: attributes)

@@ -34,7 +34,7 @@ enum CaptureWindowDiagnostics {
         panel.orderFrontRegardless()
         let rect = mainPanel.frame.insetBy(dx: 48, dy: 65)
             .offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
-        let request = CaptureRequest(mode: .region, windowID: nil,
+        let request = CaptureRequest(mode: .region, windowID: nil, displayID: nil,
             region: CaptureRegion(displayID: display.displayID, sourceRect: rect), focusMask: nil,
             captureCornerStyle: .square, appliesSoftCornerVignette: false, capturesMouseEffects: false,
             capturesSystemAudio: false, capturesMicrophone: false,

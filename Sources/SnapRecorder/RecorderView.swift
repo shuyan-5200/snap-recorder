@@ -2,49 +2,81 @@ import AppKit
 import SwiftUI
 
 /// 主面板：一块铝制操作面板。铭牌、来源旋钮、四路通道、最底部一颗橙色录制键；
-/// 录制结束后在同一块面板上命名与导出。视觉按“器物”规范，功能与交互保持原样。
+/// 左侧人像、右侧导出均为同窗抽屉。视觉按“器物”规范，功能与交互保持原样。
 struct RecorderView: View {
     @ObservedObject var model: AppModel
     @State private var showsCameraOptions = false
+    @State private var showsExportDrawer = false
+    @State private var drawerSide: RecorderDrawerSide = .left
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private static let drawerWidth = InstrumentDrawerMetrics.width + 2 * InstrumentDrawerMetrics.inset
+    private static let sourceSelectorWidth: CGFloat = 158
+    private static let sourceGap: CGFloat = 16
+    private static let displayThumbnailHeight: CGFloat = 196
+    private static let sourcePaneWidth: CGFloat = 560 - 48 - sourceSelectorWidth - sourceGap
 
     // The native full-size title bar already contributes the 44pt drag area.
-    // These heights therefore describe only the visible content below it.
-    private static let setupHeight: CGFloat = 461
-    private static let regionSetupHeight: CGFloat = 587
-    /// 四路通道的最小高度与说明文字的可用宽度（(560 − 24 × 2 − 8 × 3) ÷ 4 − 10 × 2）。
-    private static let channelMinimumHeight: CGFloat = 120
-    private static let channelTextWidth: CGFloat = 102
+    // One footprint for every mode and both drawers, below the native title bar.
+    private static let panelHeight = InstrumentDrawerMetrics.height + 2 * InstrumentDrawerMetrics.inset
 
     var body: some View {
         ZStack {
             BrushedAluminum()
                 .ignoresSafeArea()
 
-            content
-                .padding(.top, 5)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 22)
-                .allowsHitTesting(!showsCameraOptions)
-                .accessibilityHidden(showsCameraOptions)
+            GeometryReader { geometry in
+                // AppKit animates the actual window width. Deriving the reveal
+                // from that width keeps the drawer and window in lockstep, and
+                // avoids SwiftUI's minimum-size constraints snapping it open.
+                let reveal = min(1, max(0, (geometry.size.width - 560) / Self.drawerWidth))
+                HStack(alignment: .top, spacing: 0) {
+                    if drawerSide == .left {
+                        CameraOptionsView(settings: $model.cameraSettings) {
+                            setCameraOptionsVisible(false)
+                        }
+                        .padding(InstrumentDrawerMetrics.inset)
+                        .opacity(reveal)
+                        .offset(x: (1 - reveal) * 12)
+                        .frame(width: Self.drawerWidth, alignment: .trailing)
+                        .allowsHitTesting(showsCameraOptions)
+                        .disabled(!showsCameraOptions)
+                        .accessibilityHidden(!showsCameraOptions)
+                        .frame(height: windowHeight, alignment: .center)
+                        .overlay(alignment: .trailing) { drawerSeparator.opacity(reveal) }
+                    }
 
-            if showsCameraOptions {
-                Instrument.graphite.opacity(0.22)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { showsCameraOptions = false }
-                    .accessibilityHidden(true)
+                    content
+                        .padding(.top, 5)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 22)
+                        .frame(width: 560, height: windowHeight)
+                        .disabled(showsExportDrawer)
 
-                CameraOptionsView(
-                    settings: $model.cameraSettings,
-                    maximumHeight: windowHeight - 24
-                ) {
-                    showsCameraOptions = false
+                    if drawerSide == .right {
+                        exportDrawer
+                            .padding(InstrumentDrawerMetrics.inset)
+                            .opacity(reveal)
+                            .offset(x: -(1 - reveal) * 12)
+                            .frame(width: Self.drawerWidth, alignment: .leading)
+                            .allowsHitTesting(showsExportDrawer)
+                            .disabled(!showsExportDrawer)
+                            .accessibilityHidden(!showsExportDrawer)
+                            .frame(height: windowHeight, alignment: .center)
+                        .overlay(alignment: .leading) { drawerSeparator.opacity(reveal) }
+                    }
                 }
+                .frame(width: 560 + Self.drawerWidth, height: windowHeight, alignment: drawerSide == .left ? .topTrailing : .topLeading)
+                .frame(width: geometry.size.width, height: windowHeight, alignment: drawerSide == .left ? .topTrailing : .topLeading)
+                .clipped()
             }
         }
-        .frame(width: 560, height: windowHeight)
+        .frame(minWidth: 560, maxWidth: .infinity)
+        .frame(height: windowHeight)
         .preferredColorScheme(.light)
         .onAppear {
+            if isCameraDrawerPreview {
+                setCameraOptionsVisible(true)
+            }
             if model.permissionGranted {
                 Task { await model.refreshWindows() }
                 model.captureModeDidChange(model.mode)
@@ -57,71 +89,73 @@ struct RecorderView: View {
             }
         }
         .onChange(of: model.cameraSettings) { _, _ in model.updateCameraPreview() }
-        .onChange(of: model.cameraReady) { _, ready in
-            if !ready { showsCameraOptions = false }
+        .onChange(of: model.capturesCamera) { _, enabled in
+            setCameraOptionsVisible(enabled && model.phase == .idle)
         }
-        .onChange(of: model.phase) { _, phase in
-            if phase != .idle { showsCameraOptions = false }
+        .onChange(of: model.phase, initial: true) { _, phase in
+            synchronizeDrawers(for: phase)
+            model.updateDisplayPreview()
         }
+    }
+
+    private var drawerSeparator: some View {
+        Rectangle()
+            .fill(Instrument.groove)
+            .frame(width: 1)
+            .padding(.vertical, InstrumentDrawerMetrics.inset)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func setCameraOptionsVisible(_ visible: Bool) {
+        guard showsCameraOptions != visible else { return }
+        if visible { drawerSide = .left }
+        model.prepareDrawerVisibilityChange(
+            width: visible ? 560 + Self.drawerWidth : 560,
+            side: .left,
+            animated: !reduceMotion
+        )
+        showsCameraOptions = visible
+    }
+
+    private func synchronizeDrawers(for phase: RecordingPhase) {
+        let opensExport: Bool
+        switch phase {
+        case .preparingExport, .choosingExport, .exporting, .finished: opensExport = true
+        default: opensExport = false
+        }
+        if opensExport {
+            guard !showsExportDrawer else { return }
+            showsCameraOptions = false
+            drawerSide = .right
+            showsExportDrawer = true
+            model.prepareDrawerVisibilityChange(width: 560 + Self.drawerWidth, side: .right, animated: !reduceMotion)
+        } else if showsExportDrawer {
+            showsExportDrawer = false
+            model.prepareDrawerVisibilityChange(width: 560, side: .right, animated: !reduceMotion)
+        } else if phase != .idle {
+            setCameraOptionsVisible(false)
+        }
+    }
+
+    /// Layout checks can inspect the drawer without opening the camera.
+    private var isCameraDrawerPreview: Bool {
+        CommandLine.arguments.contains("--preview-camera-drawer")
     }
 
     private var windowHeight: CGFloat {
-        if model.isExportWorkspace { return exportWorkspaceHeight }
-        let base = model.mode == .region ? Self.regionSetupHeight : Self.setupHeight
-        return base + channelOverflow
-    }
-
-    /// 说明文字较长（例如摄像头报错）时通道会长高，主面板随之加高，避免裁掉录制键。
-    private var channelOverflow: CGFloat {
-        guard model.permissionGranted, !model.isExportWorkspace else { return 0 }
-        let channels: [(detail: String, hasKey: Bool)] = [
-            ("应用与网页声音", false),
-            (microphoneSubtitle, model.microphoneMessage != nil && model.microphoneFeatureAvailable),
-            (cameraSubtitle, model.cameraMessage != nil || model.cameraReady),
-            (model.capturesMouseEffects ? "准星跟随，点击时扩散" : "成片不显示鼠标", false)
-        ]
-        let tallest = channels.map { channel -> CGFloat in
-            let detail = (channel.detail as NSString).boundingRect(
-                with: CGSize(width: Self.channelTextWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: NSFont.systemFont(ofSize: 10.5)]
-            ).height
-            // 拨杆 22 + 6、标题 16、说明、附属小键 25 与上下内边距 22，行间距 3。
-            return 28 + 3 + 16 + 3 + ceil(detail) + 3 + 6 + (channel.hasKey ? 25 : 0) + 22
-        }.max() ?? 0
-        return max(0, tallest - Self.channelMinimumHeight)
-    }
-
-    private var exportWorkspaceHeight: CGFloat {
-        var height: CGFloat = 461
-        if model.exportSelection.includesVideo {
-            if model.selectedQualityPreset == .custom { height += 66 }
-        } else {
-            height -= 110
-        }
-        if !model.lastOutputURLs.isEmpty { height += 62 + savedListHeight }
-        if model.errorMessage != nil || model.exportValidationMessage != nil { height += 46 }
-        if model.completionNote != nil { height += 60 }
-        return min(761, height)
-    }
-
-    private var savedListHeight: CGFloat {
-        min(104, CGFloat(model.lastOutputURLs.count) * 19 + 13)
+        Self.panelHeight
     }
 
     @ViewBuilder
     private var content: some View {
         switch model.phase {
-        case .idle, .countdown, .recording, .paused:
+        case .idle, .countdown, .recording, .paused, .preparingExport, .exporting, .choosingExport, .finished:
             if model.permissionGranted {
                 setupView
             } else {
                 permissionView
             }
-        case .preparingExport, .exporting:
-            exportingView
-        case .choosingExport, .finished:
-            exportChoiceView
         case .failed:
             failedView
         }
@@ -141,11 +175,11 @@ struct RecorderView: View {
                     .padding(.bottom, 2)
 
                 Text("开始你的第一次录屏")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(Instrument.text(20, weight: .semibold))
                     .foregroundStyle(Instrument.graphite)
 
                 Text("需要 macOS 的屏幕录制权限。视频只在这台 Mac 上处理，录完选择画质并保存到“下载”。")
-                    .font(.system(size: 13))
+                    .font(Instrument.text(13))
                     .foregroundStyle(Instrument.ink2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 390)
@@ -166,7 +200,7 @@ struct RecorderView: View {
                         .buttonStyle(LinkTextButtonStyle())
 
                         Text("在系统设置中开启后，请完全退出并重新打开当前这份 Snap Recorder；不需要反复点击授权。")
-                            .font(.system(size: 11))
+                            .font(Instrument.text(11))
                             .foregroundStyle(Instrument.engrave)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 380)
@@ -183,7 +217,7 @@ struct RecorderView: View {
 
             Spacer()
             Text("视频只保存在本机，录制浮窗不会进入成片")
-                .font(.system(size: 11))
+                .font(Instrument.text(11))
                 .foregroundStyle(Instrument.engrave)
         }
     }
@@ -195,12 +229,16 @@ struct RecorderView: View {
             Nameplate()
 
             panelModule("来源") {
-                HStack(alignment: .top, spacing: 16) {
-                    sourceSelector
+                HStack(alignment: .top, spacing: Self.sourceGap) {
+                    sourceControls
                     sourceDetail
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
+            // The source group must not recenter when its detail pane changes.
+            // Keep the title, dial and mode stops anchored to the same top edge.
+            .fixedSize(horizontal: false, vertical: model.mode != .window)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             Groove()
 
@@ -209,8 +247,6 @@ struct RecorderView: View {
             }
 
             Groove()
-
-            Spacer(minLength: 20)
 
             Button {
                 model.startRecording()
@@ -221,6 +257,7 @@ struct RecorderView: View {
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!model.canStartRecording)
             .accessibilityLabel("开始录制")
+            .padding(.top, 20)
             .padding(.bottom, 2)
         }
         .disabled(model.phase != .idle)
@@ -235,11 +272,30 @@ struct RecorderView: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: 来源旋钮
+
+    private var sourceControls: some View {
+        VStack(alignment: .sourceModeTrailing, spacing: 0) {
+            sourceSelector
+            if model.mode == .display, model.availableDisplays.count > 1 {
+                let thumbnailSize = ScreenPresentation.thumbnailSize(source: displayThumbnailSourceSize,
+                    within: CGSize(width: Self.sourcePaneWidth, height: Self.displayThumbnailHeight))
+                // Thumbnail begins 28pt below the dial's top edge. Keep the
+                // number keys centered beside it without covering mode stops.
+                let railHeight = min(Self.displayThumbnailHeight - 38,
+                    CGFloat(model.availableDisplays.count * 40 + 6))
+                let topGap = max(6, 28 + (thumbnailSize.height - railHeight) / 2 - 60)
+                displayNumberRail
+                    .frame(width: 40, height: railHeight)
+                    .alignmentGuide(.sourceModeTrailing) { $0[.trailing] - 6 }
+                    .padding(.top, topGap)
+            }
+        }
+        .frame(width: Self.sourceSelectorWidth, alignment: .topLeading)
+    }
 
     private var sourceSelector: some View {
         HStack(spacing: 10) {
@@ -250,6 +306,7 @@ struct RecorderView: View {
                     sourceStop(mode)
                 }
             }
+            .alignmentGuide(.sourceModeTrailing) { $0[.trailing] }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("录制来源")
             .onMoveCommand { direction in
@@ -265,7 +322,7 @@ struct RecorderView: View {
                 }
             }
         }
-        .frame(width: 158, height: 60, alignment: .leading)
+        .frame(width: Self.sourceSelectorWidth, height: 60, alignment: .leading)
     }
 
     private var knobAngle: Angle {
@@ -287,8 +344,8 @@ struct RecorderView: View {
                     .frame(width: 7, height: 1)
                 LED(state: selected ? .lit : .off)
                 Text(mode.title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? Instrument.graphite : Instrument.engrave)
+                    .font(Instrument.text(12, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? Instrument.buttonText : Instrument.engrave)
                     .padding(.leading, 2)
             }
             .frame(height: 20)
@@ -327,23 +384,23 @@ struct RecorderView: View {
                 .help("刷新窗口")
                 .accessibilityLabel("刷新窗口")
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
 
             if model.isLoadingWindows {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text("正在读取可录制窗口…")
-                        .font(.system(size: 11))
+                        .font(Instrument.text(11))
                         .foregroundStyle(Instrument.ink2)
                 }
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
             } else if let windowListError = model.windowListError {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("读取窗口失败", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Instrument.text(12, weight: .semibold))
                         .foregroundStyle(Instrument.warn)
                     Text(windowListError)
-                        .font(.system(size: 11))
+                        .font(Instrument.text(11))
                         .foregroundStyle(Instrument.ink2)
                         .lineLimit(2)
                 }
@@ -351,105 +408,168 @@ struct RecorderView: View {
             } else if model.availableWindows.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("没有找到可录制窗口")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Instrument.text(12, weight: .semibold))
                         .foregroundStyle(Instrument.graphite)
                     Text("请先打开一个应用窗口，然后点右上角刷新。")
-                        .font(.system(size: 11))
+                        .font(Instrument.text(11))
                         .foregroundStyle(Instrument.ink2)
                 }
                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
             } else {
-                windowMenu
+                windowList
 
                 if let note = model.windowSelectionNote {
                     Label(note, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 10.5))
+                        .font(Instrument.text(10.5))
                         .foregroundStyle(Instrument.warn)
                         .padding(.top, 8)
-                } else {
-                    hint("橙色框标记目标；原生像素优先，成片只包含这个窗口。")
-                        .padding(.top, 8)
                 }
             }
         }
     }
 
-    private var windowMenu: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return Menu {
-            ForEach(model.availableWindows) { window in
-                Button {
-                    model.selectWindow(window.id)
-                } label: {
-                    if model.selectedWindowID == window.id {
-                        Label(
-                            "\(window.applicationName) · \(window.displayTitle)",
-                            systemImage: "checkmark"
-                        )
-                    } else {
-                        Text("\(window.applicationName) · \(window.displayTitle)")
+    private var windowList: some View {
+        let outline = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 4) {
+                    ForEach(model.availableWindows) { window in
+                        windowListRow(window)
+                            .id(window.id)
                     }
                 }
+                .padding(6)
             }
-        } label: {
-            ZStack {
-                Color.clear
-                HStack(spacing: 8) {
-                    Text(selectedWindowMenuTitle)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Instrument.engrave)
-                }
-                .padding(.horizontal, 10)
+            .frame(minHeight: 96, maxHeight: .infinity)
+            .background { outline.fill(Instrument.aluLo.opacity(0.22)) }
+            .clipShape(outline)
+            .overlay { outline.strokeBorder(Instrument.groove, lineWidth: 1).allowsHitTesting(false) }
+            .accessibilityLabel("可录制窗口")
+            .onAppear {
+                if let selected = model.selectedWindowID { proxy.scrollTo(selected, anchor: .center) }
             }
-            .frame(maxWidth: .infinity, minHeight: 30)
-            .contentShape(Rectangle())
+            .onChange(of: model.availableWindows.map(\.id)) { _, _ in
+                if let selected = model.selectedWindowID { proxy.scrollTo(selected, anchor: .center) }
+            }
         }
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-        .tint(Instrument.graphite)
-        .font(.system(size: 12, weight: .medium))
-        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-        .background {
-            shape
-                .fill(Instrument.aluHi)
-                .overlay { InnerShadow(shape: shape, color: .black.opacity(0.14), radius: 1, y: 1) }
-        }
-        .overlay { shape.strokeBorder(Instrument.graphite.opacity(0.24), lineWidth: 1).allowsHitTesting(false) }
-        .accessibilityLabel("窗口")
-        .accessibilityValue(selectedWindowMenuTitle)
     }
 
-    private var selectedWindowMenuTitle: String {
-        guard let window = model.selectedWindow else { return "选择一个窗口" }
-        return "\(window.applicationName) · \(window.displayTitle)"
+    private func windowListRow(_ window: CaptureWindowInfo) -> some View {
+        let selected = model.selectedWindowID == window.id
+        let outline = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button {
+            model.selectWindow(window.id)
+        } label: {
+            HStack(spacing: 8) {
+                LED(state: selected ? .lit : .off, size: 5)
+                Text("\(window.applicationName) · \(window.displayTitle)")
+                    .font(Instrument.text(11.5, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(Instrument.buttonText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background { outline.fill(selected ? Instrument.aluHi.opacity(0.85) : .clear) }
+            .overlay { outline.strokeBorder(selected ? Instrument.buttonText.opacity(0.45) : .clear, lineWidth: 1) }
+            .contentShape(outline)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("窗口：\(window.applicationName) · \(window.displayTitle)")
+        .accessibilityValue(selected ? "已选" : "未选")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var displaySourcePane: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 0) {
-                paneTitle("当前主屏幕")
-                Text("保留原生像素，最高约 4K 清晰度")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Instrument.ink2)
-                    .padding(.top, 2)
-                hint("Snap Recorder 的窗口和录制控制条不会进入成片")
-                    .padding(.top, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    paneTitle(model.selectedDisplay?.name ?? "选择一个屏幕")
+                        .lineLimit(1)
+                        .help(model.selectedDisplay?.name ?? "选择一个屏幕")
+                    if let display = model.selectedDisplay {
+                        Text("\(Int(display.pixelSize.width)) × \(Int(display.pixelSize.height))")
+                            .font(Instrument.mono(9.5))
+                            .foregroundStyle(Instrument.engrave)
+                            .fixedSize()
+                    }
+                }
+                Spacer(minLength: 0)
+                Button { Task { await model.refreshDisplays(userInitiated: true) } } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(KeyButtonStyle(kind: .icon))
+                .frame(minWidth: 40, minHeight: 40)
+                .disabled(model.isLoadingDisplays)
+                .accessibilityLabel("刷新屏幕")
             }
-            Spacer(minLength: 4)
-            ZStack {
-                DisplayWindowBackground(cornerRadius: 11)
-                LED(state: .lit)
+
+            displayThumbnail.frame(height: Self.displayThumbnailHeight)
+
+            if let message = model.displayListError ?? model.displayPreviewError {
+                Text(message)
+                    .font(Instrument.text(10.5))
+                    .foregroundStyle(model.displayListError != nil ? Instrument.warn : Instrument.engrave)
+                    .lineLimit(1)
             }
-            .frame(width: 22, height: 22)
-            .help("已就绪")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("已就绪")
         }
-        .frame(minHeight: 60)
+        // Lift one text row without moving the shared source-selector anchor.
+        // The reclaimed title/readout space goes to the thumbnail itself.
+        .padding(.top, -20)
+    }
+
+    private var displayThumbnailSourceSize: CGSize {
+        model.displayThumbnail.map { CGSize(width: $0.width, height: $0.height) }
+            ?? model.selectedDisplay?.pixelSize ?? CGSize(width: 16, height: 9)
+    }
+
+    private var displayNumberRail: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                ForEach(Array(model.availableDisplays.enumerated()), id: \.element.id) { index, display in
+                    Button { model.selectDisplay(display.id) } label: {
+                        Text("\(index + 1)").font(Instrument.mono(13))
+                    }
+                    .buttonStyle(KeyButtonStyle(kind: .displayNumber, isLatched: model.selectedDisplayID == display.id))
+                    .help("\(display.name) · \(display.detail)")
+                    .accessibilityLabel("屏幕 \(index + 1)：\(display.name)")
+                    .accessibilityValue(model.selectedDisplayID == display.id ? "已选" : "未选")
+                    .accessibilityAddTraits(model.selectedDisplayID == display.id ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 3)
+        }
+    }
+
+    private var displayThumbnail: some View {
+        GeometryReader { geometry in
+            let size = ScreenPresentation.thumbnailSize(source: displayThumbnailSourceSize, within: geometry.size)
+            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+            ZStack {
+                if let image = model.displayThumbnail {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                } else {
+                    shape.fill(Instrument.aluLo.opacity(0.3))
+                    if model.isLoadingDisplayThumbnail || model.isLoadingDisplays {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "display")
+                            .font(.system(size: 25, weight: .light))
+                            .foregroundStyle(Instrument.engrave)
+                    }
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(Color.black.opacity(0.12), lineWidth: 1).allowsHitTesting(false) }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("所选屏幕缩略图")
     }
 
     private var regionSourcePane: some View {
@@ -457,7 +577,6 @@ struct RecorderView: View {
             HStack(spacing: 8) {
                 paneTitle("画面比例")
                 Spacer(minLength: 6)
-                regionLockHint
             }
             .padding(.bottom, 8)
 
@@ -494,47 +613,26 @@ struct RecorderView: View {
         }
     }
 
-    private var regionLockHint: some View {
-        let locked = model.isRegionSelectionLocked
-        let tone = locked ? Instrument.ok : Instrument.engrave
-        return HStack(spacing: 4) {
-            Text(locked ? "浮层已锁定 ·" : "拖动虚线框 ·")
-            KeyCap(text: "⌘E", color: tone, border: locked ? Instrument.ok : Instrument.graphite.opacity(0.3), compact: true)
-            Text(locked ? "调整" : "锁定")
-        }
-        .font(.system(size: 10.5))
-        .foregroundStyle(tone)
-        .lineLimit(1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(locked ? "浮层已锁定，⌘E 调整" : "拖动虚线框，⌘E 锁定")
-    }
-
     private func optionRow<Controls: View>(
         title: String,
-        detail: String,
+        help: String,
         isEnabled: Bool = true,
         @ViewBuilder controls: () -> Controls
     ) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Instrument.graphite)
-                Text(detail)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Instrument.engrave)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .opacity(isEnabled ? 1 : 0.5)
+            Text(title)
+                .font(Instrument.text(12, weight: .semibold))
+                .foregroundStyle(Instrument.graphite)
+                .opacity(isEnabled ? 1 : 0.5)
             Spacer(minLength: 6)
             controls()
         }
-        .frame(minHeight: 38)
+        .frame(minHeight: 44)
+        .help(help)
     }
 
     private var captureCornerStyleOptionRow: some View {
-        optionRow(title: "录制框边角", detail: "默认圆角，也可保留方角") {
+        optionRow(title: "录制框边角", help: "默认圆角，也可保留方角") {
             InterlockKeys(
                 accessibilityTitle: "录制框边角",
                 options: FocusMaskCornerStyle.allCases,
@@ -549,7 +647,7 @@ struct RecorderView: View {
         let isEnabled = model.captureRegionCornerStyle == .rounded
         return optionRow(
             title: "柔和圆角暗角",
-            detail: "四角轻微渐隐，让画面更柔和",
+            help: "四角轻微渐隐，让画面更柔和",
             isEnabled: isEnabled
         ) {
             SlideSwitch("柔和圆角暗角", isOn: $model.appliesSoftCornerVignette)
@@ -561,7 +659,7 @@ struct RecorderView: View {
         let isAvailable = model.selectedRegionAspectRatio != .custom
         return optionRow(
             title: "聚焦蒙版",
-            detail: isAvailable ? "框内原色，框外单色并压暗 50%" : "选择固定比例后可用",
+            help: isAvailable ? "框内原色，框外单色并压暗 50%" : "选择固定比例后可用",
             isEnabled: isAvailable
         ) {
             if model.isFocusMaskEnabled {
@@ -587,16 +685,32 @@ struct RecorderView: View {
 
     // MARK: 四路通道
 
+    // Compact equal-height channels; permission recovery grows the whole row.
+    private var channelHeight: CGFloat {
+        model.cameraMessage != nil
+            || (model.microphoneMessage != nil && model.microphoneFeatureAvailable) ? 128 : 100
+    }
+
     private var channels: some View {
         HStack(alignment: .top, spacing: 8) {
-            channelStrip(title: "电脑声音", detail: "应用与网页声音") {
-                SlideSwitch("电脑声音", isOn: $model.capturesSystemAudio)
+            cameraChannel
+
+            channelStrip(
+                title: "电脑声音", detail: ChannelDescriptions.systemAudio,
+                isOn: model.capturesSystemAudio
+            ) {
+                SlideSwitch("电脑声音", isOn: $model.capturesSystemAudio,
+                    indicatorSpacing: Instrument.channelIndicatorSpacing)
             }
 
             channelStrip(
                 title: "人声（麦克风）",
                 detail: microphoneSubtitle,
-                isWarning: model.microphoneMessage != nil
+                detailHelp: model.microphoneMessage,
+                isOn: model.capturesMicrophone,
+                isBusy: model.isRequestingMicrophonePermission,
+                isWarning: model.microphoneMessage != nil,
+                showsAccessory: model.microphoneMessage != nil && model.microphoneFeatureAvailable
             ) {
                 if model.isRequestingMicrophonePermission {
                     ProgressView().controlSize(.small)
@@ -606,7 +720,8 @@ struct RecorderView: View {
                         isOn: Binding(
                             get: { model.capturesMicrophone },
                             set: { model.setMicrophoneCaptureEnabled($0) }
-                        )
+                        ),
+                        indicatorSpacing: Instrument.channelIndicatorSpacing
                     )
                     .disabled(!model.microphoneFeatureAvailable)
                 }
@@ -620,111 +735,145 @@ struct RecorderView: View {
             }
 
             channelStrip(
-                title: "摄像头",
-                detail: cameraSubtitle,
-                isWarning: model.cameraMessage != nil
-            ) {
-                SlideSwitch(
-                    "摄像头",
-                    isOn: Binding(
-                        get: { model.capturesCamera },
-                        set: { model.setCameraCaptureEnabled($0) }
-                    ),
-                    isBusy: model.isPreparingCamera
-                )
-                if model.isPreparingCamera {
-                    ProgressView().controlSize(.mini)
-                }
-            } accessory: {
-                if model.cameraMessage != nil {
-                    Button("设置") { model.openCameraSettings() }
-                        .buttonStyle(KeyButtonStyle(kind: .small))
-                }
-                if model.cameraReady {
-                    Button("人像样式") { showsCameraOptions.toggle() }
-                        .buttonStyle(KeyButtonStyle(kind: .small))
-                        .help("人像样式")
-                        .accessibilityLabel("人像样式")
-                }
-            }
-            .animation(.easeInOut(duration: 0.18), value: model.cameraReady)
-
-            channelStrip(
                 title: "录制鼠标",
-                detail: model.capturesMouseEffects ? "准星跟随，点击时扩散" : "成片不显示鼠标"
+                detail: model.capturesMouseEffects ? ChannelDescriptions.mouseOn : ChannelDescriptions.mouseOff,
+                isOn: model.capturesMouseEffects
             ) {
-                SlideSwitch("录制鼠标", isOn: $model.capturesMouseEffects)
+                SlideSwitch("录制鼠标", isOn: $model.capturesMouseEffects,
+                    indicatorSpacing: Instrument.channelIndicatorSpacing)
             }
+
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var cameraChannel: some View {
+        channelStrip(
+            title: "摄像头",
+            detail: cameraSubtitle,
+            detailHelp: model.cameraMessage,
+            isOn: model.capturesCamera,
+            isBusy: model.isPreparingCamera,
+            isWarning: model.cameraMessage != nil,
+            showsAccessory: model.cameraMessage != nil
+        ) {
+            SlideSwitch(
+                "摄像头",
+                isOn: Binding(
+                    get: { model.capturesCamera },
+                    set: { model.setCameraCaptureEnabled($0) }
+                ),
+                isBusy: model.isPreparingCamera,
+                indicatorSpacing: Instrument.channelIndicatorSpacing
+            )
+            if model.isPreparingCamera {
+                ProgressView().controlSize(.mini)
+            }
+        } accessory: {
+            if model.cameraMessage != nil {
+                Button("设置") { model.openCameraSettings() }
+                    .buttonStyle(KeyButtonStyle(kind: .small))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if model.capturesCamera, model.phase == .idle {
+                setCameraOptionsVisible(true)
+            }
+        }
+        .help(model.capturesCamera ? "点击摄像头卡片调整人像样式" : "开启后自动展开人像样式")
     }
 
     private func channelStrip<Controls: View, Accessory: View>(
         title: String,
         detail: String,
+        detailHelp: String? = nil,
+        isOn: Bool,
+        isBusy: Bool = false,
         isWarning: Bool = false,
+        showsAccessory: Bool = false,
         @ViewBuilder controls: () -> Controls,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Text(isBusy ? "准备中" : isWarning ? "需设置" : isOn ? "已开启" : "已关闭")
+                    .font(Instrument.text(9, weight: .medium))
+                    .foregroundStyle(isWarning ? Instrument.warn : Instrument.engrave)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
                 controls()
             }
             .frame(height: 22)
-            .padding(.bottom, 6)
 
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Instrument.graphite)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Text(detail)
-                .font(.system(size: 10.5))
-                .foregroundStyle(isWarning ? Instrument.warn : Instrument.engrave)
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
 
-            HStack(spacing: 6) {
-                accessory()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Instrument.text(12, weight: .semibold))
+                    .foregroundStyle(Instrument.graphite)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text(detail)
+                    .font(Instrument.text(9.5))
+                    .foregroundStyle(isWarning ? Instrument.warn : Instrument.engrave)
+                    .lineLimit(2, reservesSpace: true)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(detailHelp ?? detail)
             }
-            .padding(.top, 6)
+
+            // Reserve the recovery row across all four cards so their captions
+            // retain the same baseline, even when only one needs Settings.
+            if channelHeight > 100 {
+                HStack(spacing: 6) {
+                    if showsAccessory { accessory() }
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 24)
+                .padding(.top, 6)
+            }
         }
-        .padding(EdgeInsets(top: 10, leading: 10, bottom: 12, trailing: 10))
-        .frame(maxWidth: .infinity, minHeight: Self.channelMinimumHeight, maxHeight: .infinity, alignment: .topLeading)
+        .padding(EdgeInsets(top: 10, leading: 10, bottom: 7, trailing: 10))
+        .frame(maxWidth: .infinity)
+        .frame(height: channelHeight, alignment: .topLeading)
         .background {
-            // 通道槽：比铝面暗 3% 的内凹面，下缘一道亮边。
             ZStack {
-                shape.fill(Color.white.opacity(0.6)).offset(y: 1)
                 shape.fill(Color(hex: 0xCECCC7))
                 InnerShadow(shape: shape, color: .black.opacity(0.12), radius: 1, y: 1)
+                shape.strokeBorder(
+                    isWarning ? Instrument.warn : Instrument.groove,
+                    lineWidth: 1
+                )
             }
         }
     }
 
     private var microphoneSubtitle: String {
-        if let message = model.microphoneMessage { return message }
-        if !model.microphoneFeatureAvailable { return "需要 macOS 15 或更高版本" }
-        return model.capturesMicrophone ? "结束后可合并或分开导出" : "使用系统默认麦克风"
+        if model.microphoneMessage != nil { return ChannelDescriptions.microphoneError }
+        if !model.microphoneFeatureAvailable { return ChannelDescriptions.microphoneUnavailable }
+        if model.isRequestingMicrophonePermission { return ChannelDescriptions.microphonePreparing }
+        return model.capturesMicrophone ? ChannelDescriptions.microphoneOn : ChannelDescriptions.microphoneOff
     }
 
     private var cameraSubtitle: String {
-        model.cameraMessage ?? (
-            model.isPreparingCamera
-                ? "正在准备摄像头…"
-                : model.capturesCamera ? "人像叠入成片 · \(model.cameraSettings.position.title)" : "把你和屏幕一起录下来"
-        )
+        if model.cameraMessage != nil { return ChannelDescriptions.cameraError }
+        if model.isPreparingCamera { return ChannelDescriptions.cameraPreparing }
+        return model.capturesCamera ? ChannelDescriptions.cameraOn : ChannelDescriptions.cameraOff
     }
 
     private func paneTitle(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .semibold))
+            .font(Instrument.text(12, weight: .semibold))
             .foregroundStyle(Instrument.graphite)
             .frame(minHeight: 18)
     }
 
     private func hint(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5))
+            .font(Instrument.text(10.5))
             .foregroundStyle(Instrument.engrave)
             .lineSpacing(1)
             .fixedSize(horizontal: false, vertical: true)
@@ -732,25 +881,44 @@ struct RecorderView: View {
 
     // MARK: - 导出中
 
-    private var exportingView: some View {
-        VStack(spacing: 0) {
-            Nameplate()
-            Spacer()
-            ChaserLights()
-                .padding(.bottom, 18)
-            Text(model.phase == .preparingExport ? "正在整理录制…" : "正在导出…")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Instrument.graphite)
+    private var exportDrawer: some View {
+        InstrumentDrawer(
+            title: "录制",
+            durationText: exportDurationText,
+            canDismiss: model.isExportWorkspace,
+            showsFooter: model.phase != .preparingExport,
+            closeLabel: "关闭导出录制",
+            dismiss: { model.closeExportDrawer() }
+        ) {
+            EmptyView()
+        } content: {
+            if model.phase == .preparingExport || model.phase == .exporting {
+                exportingView
+            } else {
+                exportChoiceView
+            }
+        } footer: {
             if model.phase == .exporting {
                 Button(model.isCancellingExport ? "正在取消…" : "取消导出") {
                     model.cancelExport()
                 }
-                .buttonStyle(KeyButtonStyle())
+                .buttonStyle(KeyButtonStyle(fillsWidth: true))
                 .disabled(model.isCancellingExport)
-                .padding(.top, 18)
+            } else {
+                exportFooter
             }
-            Spacer()
         }
+    }
+
+    private var exportingView: some View {
+        VStack(spacing: 0) {
+            ChaserLights()
+                .padding(.bottom, 18)
+            Text(model.phase == .preparingExport ? "正在整理录制…" : "正在导出…")
+                .font(Instrument.text(16, weight: .semibold))
+                .foregroundStyle(Instrument.graphite)
+        }
+        .padding(.vertical, 14)
     }
 
     // MARK: - 命名与导出
@@ -760,33 +928,16 @@ struct RecorderView: View {
     }
 
     private var exportChoiceView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(spacing: 12) {
-                HStack(alignment: .center, spacing: 16) {
-                    Text("导出录制")
-                        .font(.system(size: 20, weight: .semibold))
-                        .tracking(0.4)
-                        .foregroundStyle(Instrument.graphite)
-                    Spacer()
-                    DotMatrixText(text: exportDurationText, size: 18)
-                        .padding(.horizontal, 12)
-                        .frame(height: 32)
-                        .background { DisplayWindowBackground() }
-                        .help("录制时长")
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("录制时长 \(exportDurationText)")
-                }
-                Groove()
-            }
-
+        VStack(alignment: .leading, spacing: 8) {
             VStack(spacing: 0) {
-                exportRow("导出内容") {
+                InstrumentDrawerField(title: "导出内容") {
                     HStack(spacing: 6) {
                         ForEach(RecordingTrack.allCases) { track in
                             let available = model.exportInfo?.availableTracks.contains(track) == true
                             LatchKey(
                                 title: track.title,
-                                isOn: model.selectedExportTracks.contains(track)
+                                isOn: model.selectedExportTracks.contains(track),
+                                fillsWidth: true
                             ) {
                                 model.toggleExportTrack(track)
                             }
@@ -796,14 +947,15 @@ struct RecorderView: View {
                     }
                 }
 
-                RowSeparator()
+                InstrumentDrawerDivider()
 
-                exportRow("输出方式") {
+                InstrumentDrawerField(title: "输出方式") {
                     InterlockKeys(
                         accessibilityTitle: "输出方式",
                         options: ExportArrangement.allCases,
                         selection: model.selectedExportArrangement,
-                        title: \.title
+                        title: \.title,
+                        fills: true
                     ) { arrangement in
                         model.selectedExportArrangement = arrangement
                         model.errorMessage = nil
@@ -811,179 +963,132 @@ struct RecorderView: View {
                 }
 
                 if model.exportSelection.includesVideo {
-                    RowSeparator()
-                    exportRow("视频大小", alignment: .top) {
-                        videoSizeControls
+                    InstrumentDrawerDivider()
+                    InstrumentDrawerField(title: "视频大小") {
+                        VStack(spacing: 8) {
+                            videoSizeControls
+                            videoExportReadout
+                        }
                     }
                 }
 
-                RowSeparator()
+                InstrumentDrawerDivider()
 
-                exportRow("名称") {
-                    TextField("录屏名称", text: $model.exportName)
-                        .grooveField(isInvalid: model.exportValidationMessage?.hasPrefix("名称") == true)
-                        .accessibilityLabel("保存名称")
+                HStack(alignment: .top, spacing: 8) {
+                    InstrumentDrawerField(title: "文件名") {
+                        TextField("文件名", text: $model.exportName)
+                            .grooveField(isInvalid: model.exportValidationMessage?.hasPrefix("文件名") == true)
+                            .accessibilityLabel("文件名")
+                            .help(model.exportName)
+                            .frame(height: 40)
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity)
+
+                    customVideoSizeField
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+
+                if usesCustomVideoSize, !model.customSizeGuidance.isEmpty {
+                    Text(model.customSizeGuidance)
+                        .font(Instrument.text(10.5))
+                        .foregroundStyle(Instrument.engrave)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
                 }
             }
 
-            if let message = model.errorMessage ?? model.exportValidationMessage {
+            if let message = exportNotice {
                 Text(message)
-                    .font(.system(size: 12))
+                    .font(Instrument.text(12))
                     .foregroundStyle(Instrument.warn)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .help(message)
             }
-            if let note = model.completionNote {
-                Text(note)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Instrument.warn)
-                    .lineLimit(3)
-            }
+        }
+    }
 
-            if !model.lastOutputURLs.isEmpty {
-                savedFiles
-            }
+    private var exportNotice: String? {
+        model.errorMessage ?? model.exportValidationMessage ?? model.completionNote
+    }
 
-            Spacer(minLength: 0)
-
-            VStack(spacing: 12) {
-                Button {
-                    model.exportRecording()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.to.line")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(model.exportButtonTitle)
-                    }
+    private var exportFooter: some View {
+        HStack(spacing: 8) {
+            Button {
+                model.exportRecording()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(model.exportButtonTitle)
                 }
-                .buttonStyle(KeyButtonStyle(kind: .dark))
-                .disabled(!model.canExport)
-                .accessibilityLabel(model.exportButtonTitle)
-
-                HStack {
-                    Button(model.lastOutputURLs.isEmpty ? "放弃此次录制" : "完成") { model.recordAgain() }
-                    Spacer()
-                    Button("重新录制") { model.restartRecording() }
-                }
-                .buttonStyle(KeyButtonStyle())
             }
-            .padding(.bottom, 2)
+            .buttonStyle(KeyButtonStyle(kind: .dark))
+            .disabled(!model.canExport)
+            .accessibilityLabel(model.exportButtonTitle)
+
+            Button {
+                model.restartRecording()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("重新录制")
+                }
+            }
+            .buttonStyle(KeyButtonStyle(kind: .secondaryAction))
+            .help(model.hasUnfinishedSave ? "先确认放弃未保存的原片，再重新录制；原片可在废纸篓找回" : "保留已导出文件，再重新录制")
+            .accessibilityLabel("重新录制")
         }
     }
 
     private var videoSizeControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            FivePositionSlider(
-                accessibilityTitle: "视频大小",
-                options: RecordingQualityPreset.allCases,
-                selection: model.selectedQualityPreset,
-                title: \.title,
-                help: { $0 == .tiny ? "适合随手记录，小字细节会减少" : $0.detail }
-            ) { model.selectedQualityPreset = $0 }
-
-            if model.selectedQualityPreset == .custom {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text("视频上限")
-                        TextField("MB", text: $model.customSizeMegabytes)
-                            .multilineTextAlignment(.trailing)
-                            .grooveField(
-                                isInvalid: model.exportValidationMessage?.hasPrefix("视频上限") == true,
-                                monospaced: true
-                            )
-                            .frame(width: 88)
-                            .accessibilityLabel("视频大小上限 MB")
-                        Text("MB")
-                        Spacer()
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Instrument.ink2)
-
-                    Text(model.customSizeGuidance)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Instrument.engrave)
-                        .monospacedDigit()
-                }
-            }
-
-            if !model.exportEstimate.isEmpty {
-                Text(model.exportEstimate)
-                    .font(Instrument.mono(11))
-                    .monospacedDigit()
-                    .foregroundStyle(Instrument.readout)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .padding(.vertical, 7)
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background { DisplayWindowBackground() }
-            }
-        }
+        FivePositionSlider(
+            accessibilityTitle: "视频大小",
+            options: RecordingQualityPreset.allCases,
+            selection: model.selectedQualityPreset,
+            title: \.title,
+            help: { $0 == .tiny ? "适合随手记录，小字细节会减少" : $0.detail }
+        ) { model.selectedQualityPreset = $0 }
     }
 
-    private var savedFiles: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Groove()
-                .padding(.bottom, 4)
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    LED(state: .lit)
-                    Text("已保存 \(model.lastOutputURLs.count) 个文件")
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Instrument.ok)
-                .accessibilityElement(children: .combine)
-                Spacer()
-                Button("在访达中显示") { model.revealLastRecording() }
-                    .buttonStyle(KeyButtonStyle(kind: .small))
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(model.lastOutputURLs.enumerated()), id: \.element.path) { index, url in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(String(format: "%02d", index + 1))
-                                .foregroundStyle(Instrument.readoutDim)
-                                .frame(minWidth: 18, alignment: .leading)
-                                .accessibilityHidden(true)
-                            Text(url.lastPathComponent)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .layoutPriority(1)
-                            DottedLeader()
-                            if let bytes = try? ExportPlanning.fileBytes(url) {
-                                Text(ExportPlanning.sizeText(Double(bytes)))
-                                    .foregroundStyle(Instrument.readoutDim)
-                                    .monospacedDigit()
-                            }
-                        }
-                        .frame(height: 16)
-                    }
-                }
-                .font(Instrument.mono(11))
+    @ViewBuilder
+    private var videoExportReadout: some View {
+        if !model.exportEstimate.isEmpty {
+            Text(model.exportEstimate)
+                .font(Instrument.mono(10))
+                .monospacedDigit()
                 .foregroundStyle(Instrument.readout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 10)
-            }
-            .scrollIndicators(.never)
-            .frame(height: savedListHeight)
-            .background { DisplayWindowBackground() }
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
+                .background { DisplayWindowBackground() }
+                .help(model.exportEstimate)
         }
     }
 
-    private func exportRow<Content: View>(
-        _ title: String,
-        alignment: VerticalAlignment = .center,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        HStack(alignment: alignment, spacing: 12) {
-            EngravedLabel(title)
-                .frame(width: 76, alignment: .leading)
-                .padding(.top, alignment == .top ? 6 : 0)
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var customVideoSizeField: some View {
+        InstrumentDrawerField(title: "自定义上限（MB）") {
+            TextField("MB", text: $model.customSizeMegabytes)
+                .multilineTextAlignment(.trailing)
+                .grooveField(
+                    isInvalid: model.exportValidationMessage?.hasPrefix("视频上限") == true,
+                    monospaced: true
+                )
+                .accessibilityLabel("自定义视频大小上限 MB")
+                .disabled(!usesCustomVideoSize)
+                .help(usesCustomVideoSize ? "\(model.customSizeGuidance)\n\(model.exportEstimate)" : "选择视频和自定义档后可设置每个视频的大小上限")
+                .frame(height: 40)
         }
-        .padding(.vertical, 9)
-        .frame(minHeight: 48)
+    }
+
+    private var usesCustomVideoSize: Bool {
+        model.exportSelection.includesVideo && model.selectedQualityPreset == .custom
     }
 
     // MARK: - 失败
@@ -997,10 +1102,10 @@ struct RecorderView: View {
                 .foregroundStyle(Instrument.warn)
                 .padding(.bottom, 14)
             Text(model.hasRetryableSave ? "录屏还在，保存未完成" : "这次没有完成")
-                .font(.system(size: 20, weight: .semibold))
+                .font(Instrument.text(20, weight: .semibold))
                 .foregroundStyle(Instrument.graphite)
             Text(model.errorMessage ?? "发生了未知错误，请再试一次。")
-                .font(.system(size: 13))
+                .font(Instrument.text(13))
                 .foregroundStyle(Instrument.ink2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 390)
@@ -1046,6 +1151,7 @@ private struct RecordKeyLabel: View {
                 Spacer()
                 KeyCap(
                     text: "⌘R",
+                    keepsOriginalTextSize: true,
                     color: isEnabled ? Instrument.graphite : Instrument.disabled,
                     border: Instrument.graphite.opacity(isEnabled ? 0.45 : 0.2)
                 )
@@ -1053,21 +1159,6 @@ private struct RecordKeyLabel: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// 出片清单里文件名与体积之间的点线。
-private struct DottedLeader: View {
-    var body: some View {
-        GeometryReader { proxy in
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: proxy.size.height - 3))
-                path.addLine(to: CGPoint(x: proxy.size.width, y: proxy.size.height - 3))
-            }
-            .stroke(Instrument.readout.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [1, 2]))
-        }
-        .frame(minWidth: 20)
-        .accessibilityHidden(true)
     }
 }
 
@@ -1143,7 +1234,7 @@ struct RecordingHUDView: View {
             ZStack {
                 if paused {
                     Text("已暂停")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Instrument.text(12, weight: .semibold))
                         .foregroundStyle(Instrument.readout)
                 } else {
                     DotMatrixText(text: model.elapsedText, size: 18)
@@ -1223,4 +1314,12 @@ private struct RecordingLamp: View {
                 .frame(width: 8, height: 8)
         }
     }
+}
+
+private enum SourceModeTrailingAlignment: AlignmentID {
+    static func defaultValue(in dimensions: ViewDimensions) -> CGFloat { dimensions[.trailing] }
+}
+
+private extension HorizontalAlignment {
+    static let sourceModeTrailing = HorizontalAlignment(SourceModeTrailingAlignment.self)
 }

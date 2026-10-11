@@ -23,6 +23,17 @@ final class AppModel: ObservableObject {
     @Published var microphoneMessage: String?
     @Published var availableWindows: [CaptureWindowInfo] = []
     @Published var selectedWindowID: CGWindowID?
+    @Published private(set) var availableDisplays: [CaptureDisplayInfo] = []
+    @Published private(set) var selectedDisplayID: CGDirectDisplayID?
+    @Published private(set) var displayThumbnail: CGImage?
+    @Published private(set) var isLoadingDisplays = false
+    @Published private(set) var isLoadingDisplayThumbnail = false
+    @Published private(set) var displayListError: String?
+    @Published private(set) var displayPreviewError: String?
+    private var hasLoadedDisplays = false
+    private var displayPreviewTask: Task<Void, Never>?
+    private var previewDisplayID: CGDirectDisplayID?
+    private var displayPreviewGeneration = UUID()
     @Published var phase: RecordingPhase = .idle
     @Published var permissionGranted = CGPreflightScreenCaptureAccess()
     @Published var hasRequestedPermission = false
@@ -43,7 +54,7 @@ final class AppModel: ObservableObject {
     @Published var completionNote: String?
     @Published var hasRetryableSave = false
     @Published var recoveryURLs: [URL] = []
-    @Published var selectedQualityPreset: RecordingQualityPreset = .balanced
+    @Published var selectedQualityPreset: RecordingQualityPreset = .maximum
     @Published var selectedExportTracks: Set<RecordingTrack> = [.video]
     @Published var selectedExportArrangement: ExportArrangement = .merged
 
@@ -101,6 +112,10 @@ final class AppModel: ObservableObject {
         return availableWindows.first { $0.id == selectedWindowID }
     }
 
+    var selectedDisplay: CaptureDisplayInfo? {
+        availableDisplays.first { $0.id == selectedDisplayID }
+    }
+
     var canStartRecording: Bool {
         guard permissionGranted,
               !isRequestingMicrophonePermission,
@@ -119,7 +134,7 @@ final class AppModel: ObservableObject {
         if mode == .region {
             return captureRegion != nil
         }
-        return true
+        return selectedDisplay != nil && !isLoadingDisplays
     }
 
     var elapsedText: String {
@@ -210,12 +225,15 @@ final class AppModel: ObservableObject {
                 : ExportPlanning.sizeText(upper)
             return "\(size) · 视频约 \(text)"
         }
-        return "最高 \(size) · 视频约 \(ExportPlanning.sizeText(estimate))"
+        return "\(size) · 视频约 \(ExportPlanning.sizeText(estimate))"
     }
 
     /// A generated fixture exercises the real export screen without capturing private media.
     func prepareExportPreview() async {
         guard RecordingDiagnostics.isExportPreview else { return }
+        if CommandLine.arguments.contains("--preview-region") {
+            mode = .region
+        }
         phase = .preparingExport
         do {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SnapRecorder-UI-\(UUID())")
@@ -238,6 +256,8 @@ final class AppModel: ObservableObject {
             activeCapturesSystemAudio = true
             exportName = "导出界面测试"
             await applyStopOutcome(.awaitingExportChoice)
+            windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
+            windowCoordinator.showMainWindow()
         } catch {
             errorMessage = error.localizedDescription
             phase = .failed
@@ -263,6 +283,7 @@ final class AppModel: ObservableObject {
         let nowGranted = CGPreflightScreenCaptureAccess()
         permissionGranted = nowGranted
         if !nowGranted {
+            updateDisplayPreview()
             isRegionSelectionLocked = false
             windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
             windowCoordinator.updateGlobalShortcuts(
@@ -274,6 +295,7 @@ final class AppModel: ObservableObject {
         if nowGranted,
            phase == .idle || phase == .failed || phase == .finished {
             Task { await refreshWindows() }
+            if mode == .display { Task { await refreshDisplays() } }
         }
         if nowGranted, mode == .region, phase == .idle {
             captureModeDidChange(.region)
@@ -404,6 +426,15 @@ final class AppModel: ObservableObject {
         windowCoordinator.showCameraPreview(frames: cameraService.frames, settings: cameraSettings)
     }
 
+    func prepareDrawerVisibilityChange(width: CGFloat, side: RecorderDrawerSide, animated: Bool) {
+        windowCoordinator.resizeMainWindowForDrawer(width: width, side: side, animated: animated)
+    }
+
+    func closeExportDrawer() {
+        guard isExportWorkspace, closeExportSessionIfNeeded() else { return }
+        restoreSourceAfterExport()
+    }
+
     func closeExportSessionIfNeeded() -> Bool {
         guard isExportWorkspace else { return true }
         if hasUnfinishedSave {
@@ -412,12 +443,13 @@ final class AppModel: ObservableObject {
             alert.informativeText = "放弃后可在废纸篓中找回临时原片。"
             alert.addButton(withTitle: "继续导出")
             alert.addButton(withTitle: "放弃此次录制")
-            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+            guard windowCoordinator.runAlert(alert) == .alertSecondButtonReturn else { return false }
         }
         return endExportSession()
     }
 
     func mainWindowClosed() {
+        stopDisplayPreview()
         if phase == .idle || phase == .failed || phase == .finished || phase == .choosingExport {
             setCameraCaptureEnabled(false)
             windowCoordinator.hideWindowSelection()
@@ -435,6 +467,7 @@ final class AppModel: ObservableObject {
     }
 
     func captureModeDidChange(_ newMode: CaptureMode) {
+        updateDisplayPreview()
         guard permissionGranted else {
             isRegionSelectionLocked = false
             windowCoordinator.hideWindowSelection()
@@ -452,6 +485,7 @@ final class AppModel: ObservableObject {
         } else {
             windowCoordinator.hideWindowSelection()
         }
+        if newMode == .display { Task { await refreshDisplays() } }
         guard newMode == .region else {
             isRegionSelectionLocked = false
             windowCoordinator.hideRegionSelection(resetMainWindowLevel: true)
@@ -608,6 +642,95 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func refreshDisplays(userInitiated: Bool = false) async {
+        guard permissionGranted, !isLoadingDisplays else { return }
+        isLoadingDisplays = true
+        displayListError = nil
+        defer { isLoadingDisplays = false }
+        do {
+            let displays = try await captureService.availableDisplays()
+            guard permissionGranted else { return }
+            let previous = selectedDisplayID
+            availableDisplays = displays
+            if !hasLoadedDisplays || previous != nil {
+                selectedDisplayID = DisplaySelection.resolve(current: previous, available: displays,
+                    preferred: windowCoordinator.mainWindowDisplayID)
+            }
+            // A disconnected target never changes silently. Explicit Refresh
+            // can select the sole remaining display, whose number rail is hidden.
+            if userInitiated, selectedDisplayID == nil, displays.count == 1 {
+                selectedDisplayID = displays.first?.id
+            }
+            hasLoadedDisplays = true
+            if previous != nil, selectedDisplayID == nil {
+                displayListError = "之前选择的屏幕已断开 请重新选择"
+            } else if displays.isEmpty {
+                displayListError = "没有找到可录制的本地屏幕"
+            }
+            updateDisplayPreview()
+        } catch {
+            if isScreenCapturePermissionFailure(error) {
+                enterScreenCapturePermissionState()
+            } else {
+                displayListError = error.localizedDescription
+            }
+        }
+    }
+
+    func selectDisplay(_ displayID: CGDirectDisplayID) {
+        guard phase == .idle || phase == .failed,
+              availableDisplays.contains(where: { $0.id == displayID }) else { return }
+        selectedDisplayID = displayID
+        displayListError = nil
+        updateDisplayPreview()
+    }
+
+    func updateDisplayPreview() {
+        guard permissionGranted, mode == .display, phase == .idle || phase == .failed,
+              let selectedDisplayID, selectedDisplay != nil else {
+            stopDisplayPreview()
+            return
+        }
+        guard previewDisplayID != selectedDisplayID || displayPreviewTask == nil else { return }
+        stopDisplayPreview()
+        previewDisplayID = selectedDisplayID
+        let generation = displayPreviewGeneration
+        isLoadingDisplayThumbnail = true
+        displayPreviewTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                do {
+                    let image = try await self.captureService.displayThumbnail(displayID: selectedDisplayID)
+                    guard !Task.isCancelled, self.displayPreviewGeneration == generation else { return }
+                    self.displayThumbnail = image
+                    self.displayPreviewError = nil
+                    self.isLoadingDisplayThumbnail = false
+                } catch {
+                    guard !Task.isCancelled, self.displayPreviewGeneration == generation else { return }
+                    self.displayThumbnail = nil
+                    self.isLoadingDisplayThumbnail = false
+                    self.displayPreviewError = "缩略图暂不可用 可点击刷新"
+                    if self.isScreenCapturePermissionFailure(error) {
+                        self.enterScreenCapturePermissionState()
+                        return
+                    }
+                }
+                do { try await Task.sleep(for: .seconds(2)) }
+                catch { return }
+            }
+        }
+    }
+
+    private func stopDisplayPreview() {
+        displayPreviewTask?.cancel()
+        displayPreviewTask = nil
+        previewDisplayID = nil
+        displayPreviewGeneration = UUID()
+        displayThumbnail = nil
+        displayPreviewError = nil
+        isLoadingDisplayThumbnail = false
+    }
+
     func startRecording() {
         guard recordingStartTask == nil else { return }
         recordingStartTask = Task { [weak self] in
@@ -688,7 +811,7 @@ final class AppModel: ObservableObject {
         hasRetryableSave = false
         recoveryURLs = []
         exportInfo = nil
-        selectedQualityPreset = .balanced
+        selectedQualityPreset = .maximum
         selectedExportTracks = [.video]
         selectedExportArrangement = .merged
         isRegionSelectionLocked = false
@@ -698,6 +821,10 @@ final class AppModel: ObservableObject {
 
     func recordAgain() {
         guard endExportSession() else { return }
+        restoreSourceAfterExport()
+    }
+
+    private func restoreSourceAfterExport() {
         if mode == .window {
             Task { await refreshWindows() }
         } else if mode == .region {
@@ -707,7 +834,7 @@ final class AppModel: ObservableObject {
 
     func restartRecording() {
         let restoreCamera = activeCapturesCamera
-        guard endExportSession() else { return }
+        guard isExportWorkspace, closeExportSessionIfNeeded() else { return }
         Task {
             if mode == .window { await refreshWindows() }
             if mode == .region { captureModeDidChange(.region) }
@@ -748,10 +875,17 @@ final class AppModel: ObservableObject {
             cameraFailureDuringCountdown = nil
 
             let outputURL = try makeOutputURL()
-            let targetProcessID = mode == .window ? selectedWindow?.processID : nil
+            // Snapshot the selected title before countdown/refresh can change it.
+            let recordingWindow = mode == .window ? selectedWindow : nil
+            let defaultExportName = ExportPlanning.recordingName(
+                windowTitle: recordingWindow?.title,
+                fallback: outputURL.deletingPathExtension().lastPathComponent
+            )
+            let targetProcessID = recordingWindow?.processID
             let request = CaptureRequest(
                 mode: mode,
                 windowID: selectedWindowID,
+                displayID: mode == .display ? selectedDisplayID : nil,
                 region: mode == .region ? captureRegion : nil,
                 focusMask: mode == .region && isFocusMaskEnabled ? focusMask : nil,
                 captureCornerStyle: captureRegionCornerStyle,
@@ -764,6 +898,7 @@ final class AppModel: ObservableObject {
             )
 
             phase = .countdown
+            updateDisplayPreview()
             windowCoordinator.updateGlobalShortcuts(
                 isRegionPreparing: false,
                 isRegionLocked: false,
@@ -788,10 +923,10 @@ final class AppModel: ObservableObject {
             lastRecordingResult = nil
             hasRetryableSave = false
             recoveryURLs = []
-            selectedQualityPreset = .balanced
+            selectedQualityPreset = .maximum
             selectedExportTracks = [.video]
             selectedExportArrangement = .merged
-            exportName = outputURL.deletingPathExtension().lastPathComponent
+            exportName = defaultExportName
             activeCapturesCamera = capturesCamera
             activeCapturesSystemAudio = capturesSystemAudio
             activeCapturesMicrophone = capturesMicrophone
@@ -869,6 +1004,7 @@ final class AppModel: ObservableObject {
 
     private func enterScreenCapturePermissionState() {
         permissionGranted = false
+        stopDisplayPreview()
         hasRequestedPermission = true
         windowListError = nil
         windowCoordinator.hideWindowSelection()
@@ -962,7 +1098,7 @@ final class AppModel: ObservableObject {
             lastRecordingResult = result
             phase = .finished
         case .awaitingExportChoice:
-            selectedQualityPreset = .balanced
+            selectedQualityPreset = .maximum
             selectedExportTracks = [.video]
             selectedExportArrangement = .merged
             do {

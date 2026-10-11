@@ -170,7 +170,7 @@ kbd { font: 10px/1.5 var(--mono); }
 .readout-rule { display: block; margin: 28px 0 18px; height: 8px; background: repeating-linear-gradient(90deg, #606258 0 1px, transparent 1px 8px); }
 .local-readout p { display: flex; align-items: center; gap: 11px; font-size: 10px; color: var(--readout-dim); }
 .local-readout p > span:not(.warm-led) { color: #7a7d70; }
-.warm-led { width: 5px; height: 5px; border-radius: 50%; background: #fff3cf; box-shadow: 0 0 4px rgb(255 243 207 / 30%); flex-shrink: 0; }
+.warm-led { width: 5px; height: 5px; border-radius: 50%; background: #a8eb8a; box-shadow: 0 0 4px rgb(168 235 138 / 30%); flex-shrink: 0; }
 .workflow { display: grid; grid-template-columns: 1fr 3fr; gap: 45px; margin-top: 49px; }
 .workflow-heading h3 { font-size: 20px; line-height: 1.6; }
 .workflow-heading > span { font-size: 8px; margin-top: 15px; }

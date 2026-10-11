@@ -9,10 +9,8 @@ final class CameraPreviewController {
     private var panel: NSPanel?
     private var preview: CameraPreviewView?
 
-    func show(frames: CameraFrameStore, settings: CameraOverlaySettings) {
-        guard let screen = NSScreen.screens.first(where: {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == CGMainDisplayID()
-        }) ?? NSScreen.main else { return }
+    func show(frames: CameraFrameStore, settings: CameraOverlaySettings, on targetScreen: NSScreen?) {
+        guard let screen = targetScreen ?? NSScreen.screens.first else { return }
         let panel: NSPanel
         let preview: CameraPreviewView
         if let existing = self.panel, let view = self.preview {

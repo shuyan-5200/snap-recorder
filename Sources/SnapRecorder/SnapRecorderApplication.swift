@@ -26,7 +26,44 @@ struct SnapRecorderApplication {
         let delegate = AppDelegate(previouslyActiveApplication: previouslyActiveApplication)
         application.delegate = delegate
         application.setActivationPolicy(.accessory)
+        application.mainMenu = makeMainMenu(for: application)
         application.run()
+    }
+
+    /// Accessory applications do not receive a reliable Command-Q route unless
+    /// they install an application menu explicitly.
+    @MainActor
+    private static func makeMainMenu(for application: NSApplication) -> NSMenu {
+        let mainMenu = NSMenu(title: "Snap Recorder")
+        let applicationItem = NSMenuItem()
+        let applicationMenu = NSMenu(title: "Snap Recorder")
+        let quitItem = NSMenuItem(
+            title: "退出 Snap Recorder",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        quitItem.keyEquivalentModifierMask = [.command]
+        quitItem.target = application
+        applicationMenu.addItem(quitItem)
+        applicationItem.submenu = applicationMenu
+        mainMenu.addItem(applicationItem)
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "编辑")
+        for (title, action, key) in [
+            ("撤销", "undo:", "z"),
+            ("剪切", "cut:", "x"),
+            ("复制", "copy:", "c"),
+            ("粘贴", "paste:", "v"),
+            ("全选", "selectAll:", "a")
+        ] {
+            let item = NSMenuItem(title: title, action: Selector(action), keyEquivalent: key)
+            item.keyEquivalentModifierMask = [.command]
+            editMenu.addItem(item)
+        }
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+        return mainMenu
     }
 }
 
@@ -41,6 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--self-test-display-panels") {
+            Task {
+                do {
+                    print(try await DisplayPresentationDiagnostics.runNative())
+                    Darwin.exit(0)
+                } catch {
+                    fputs("Display presentation test failed: \(error.localizedDescription)\n", stderr)
+                    Darwin.exit(1)
+                }
+            }
+            return
+        }
         if CommandLine.arguments.contains("--self-test-window-capture") {
             Task {
                 do {
@@ -65,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.windowCoordinator = coordinator
         self.model = model
         coordinator.showMainWindow()
+        if CommandLine.arguments.contains("--preview-displays") {
+            model.mode = .display
+            model.captureModeDidChange(.display)
+        }
         if RecordingDiagnostics.isExportPreview {
             Task { await model.prepareExportPreview() }
         }
@@ -106,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.messageText = "正在准备录制"
             alert.informativeText = "请等录制控制条出现后，再结束或退出 Snap Recorder。"
             alert.addButton(withTitle: "继续等待")
-            alert.runModal()
+            runAlert(alert)
             return .terminateCancel
         }
 
@@ -117,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "结束录制")
             alert.addButton(withTitle: "继续录制")
-            if alert.runModal() == .alertFirstButtonReturn {
+            if runAlert(alert) == .alertFirstButtonReturn {
                 model.stopRecording()
             }
             return .terminateCancel
@@ -133,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "临时录屏仍在本机。请先重试保存，避免之后找不到它。"
             alert.addButton(withTitle: "重试保存")
             alert.addButton(withTitle: "继续留在 Snap Recorder")
-            if alert.runModal() == .alertFirstButtonReturn {
+            if runAlert(alert) == .alertFirstButtonReturn {
                 model.retrySavingRecording()
             }
             windowCoordinator?.showMainWindow()
@@ -145,10 +198,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.messageText = "正在导出"
             alert.informativeText = "请先完成或取消导出。"
             alert.addButton(withTitle: "知道了")
-            alert.runModal()
+            runAlert(alert)
             return .terminateCancel
         }
 
         return .terminateNow
+    }
+
+    @discardableResult
+    private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        windowCoordinator?.runAlert(alert) ?? alert.runModal()
     }
 }

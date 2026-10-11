@@ -77,23 +77,15 @@ enum ExportPlanning {
         }
         let hasAudio = hasSystemAudio || includesCombinedVoice
         let audioRate = hasAudio ? preset.audioBitrate : 0
+        let nativeBitrate = maximumVideoBitrate(for: sourceSize)
         var bounds: CGSize
         var bitrate: Int
         var limit: Int64?
         switch preset {
-        case .maximum:
-            bounds = sourceSize
-            // Native pixels, with a much lower ceiling than the capture master.
-            bitrate = max(1_000_000, min(32_000_000, Int(sourceSize.width * sourceSize.height * 5.8)))
-        case .balanced:
-            bounds = CGSize(width: 1_920, height: 1_080)
-            bitrate = 4_000_000
-        case .compact:
-            bounds = CGSize(width: 1_280, height: 720)
-            bitrate = 1_200_000
-        case .tiny:
-            bounds = CGSize(width: 854, height: 480)
-            bitrate = 400_000
+        case .maximum, .balanced, .compact, .tiny:
+            let scale = preset.resolutionScale ?? 1
+            bounds = relativeSize(sourceSize, scale: scale)
+            bitrate = max(80_000, Int(Double(nativeBitrate) * preset.videoBitrateFraction))
         case .custom:
             let recommendation = try customSizeRecommendation(
                 sourceSize: sourceSize, duration: duration, hasSystemAudio: hasSystemAudio,
@@ -126,40 +118,18 @@ enum ExportPlanning {
                 throw CaptureError.couldNotFinishWriter("这个体积不足以保存完整录制，请提高大小上限。")
             }
             bitrate = min(32_000_000, Int(budget))
-            let effectiveRate = Double(bitrate)
-            if effectiveRate >= 10_000_000 {
-                bounds = sourceSize
-            } else if effectiveRate >= 2_400_000 {
-                bounds = CGSize(width: 1_920, height: 1_080)
-            } else if effectiveRate >= 800_000 {
-                bounds = CGSize(width: 1_280, height: 720)
-            } else if effectiveRate >= 250_000 {
-                bounds = CGSize(width: 854, height: 480)
-            } else if effectiveRate >= 160_000 {
-                bounds = CGSize(width: 480, height: 270)
-            } else {
-                bounds = CGSize(width: 320, height: 180)
-            }
-        }
-        if preset != .maximum, sourceSize.height > sourceSize.width, bounds.width > bounds.height {
-            bounds = CGSize(width: bounds.height, height: bounds.width)
+            // Pixel count and bitrate both scale with area. Derive a continuous
+            // dimension ratio from the available bitrate instead of snapping
+            // arbitrary recordings to fixed 1080p/720p/480p canvases.
+            let scale = min(1, max(0.125, sqrt(Double(bitrate) / Double(nativeBitrate))))
+            bounds = relativeSize(sourceSize, scale: scale)
         }
         let size = CaptureSizing.fit(source: sourceSize, inside: bounds, allowUpscale: false)
-        if preset != .maximum && preset != .custom {
-            // Small regions need fewer bits than a full frame; maintain tier spacing.
-            let pixelFraction = Double(size.width * size.height / (bounds.width * bounds.height))
-            bitrate = Int(Double(bitrate) * max(0.2, pixelFraction))
-        }
         if let sourceVideoBitrate, sourceVideoBitrate.isFinite, sourceVideoBitrate > 0 {
-            let fraction: Double
-            switch preset {
-            case .maximum: fraction = 1
-            case .balanced: fraction = 0.5
-            case .compact: fraction = 0.2
-            case .tiny: fraction = 0.08
-            case .custom: fraction = 1
-            }
-            bitrate = min(bitrate, max(80_000, Int(sourceVideoBitrate * fraction)))
+            bitrate = min(
+                bitrate,
+                max(80_000, Int(sourceVideoBitrate * preset.videoBitrateFraction))
+            )
         }
         return VideoExportPlan(
             size: CaptureSizing.evenSize(width: size.width * resolutionScale, height: size.height * resolutionScale),
@@ -170,17 +140,53 @@ enum ExportPlanning {
         )
     }
 
+    private static func maximumVideoBitrate(for sourceSize: CGSize) -> Int {
+        max(1_000_000, min(32_000_000, Int(sourceSize.width * sourceSize.height * 5.8)))
+    }
+
+    private static func relativeSize(_ sourceSize: CGSize, scale: CGFloat) -> CGSize {
+        CaptureSizing.evenSize(
+            width: sourceSize.width * scale,
+            height: sourceSize.height * scale
+        )
+    }
+
+    /// Window titles may contain path separators, control characters or more
+    /// bytes than a legal export name. Preserve readable text, not a path.
+    static func recordingName(windowTitle: String?, fallback: String) -> String {
+        guard let windowTitle else { return fallback }
+        let cleaned = windowTitle.unicodeScalars.map { scalar -> String in
+            if scalar == "/" || scalar == ":" { return " - " }
+            if isForbiddenNameControl(scalar) { return " " }
+            return String(scalar)
+        }.joined()
+        var name = cleaned.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        while name.hasPrefix(".") { name.removeFirst() }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var limited = ""
+        for character in name {
+            guard limited.utf8.count + String(character).utf8.count <= 180 else { break }
+            limited.append(character)
+        }
+        return (try? validatedName(limited, fallback: fallback)) ?? fallback
+    }
+
     static func validatedName(_ input: String, fallback: String) throws -> String {
         var name = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.lowercased().hasSuffix(".mp4") { name.removeLast(4) }
         if name.isEmpty { name = fallback }
         guard name != ".", name != "..", !name.hasPrefix("."),
               !name.contains("/"), !name.contains(":"),
-              name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
+              name.unicodeScalars.allSatisfy({ !isForbiddenNameControl($0) }),
               name.utf8.count <= 180 else {
-            throw CaptureError.couldNotFinishWriter("名称不能以句点开头、包含 / 或 :，或超过 180 字节。")
+            throw CaptureError.couldNotFinishWriter("文件名不能以句点开头、包含 / 或 :，或超过 180 字节。")
         }
         return name
+    }
+
+    private static func isForbiddenNameControl(_ scalar: Unicode.Scalar) -> Bool {
+        // Keep the joiner used by compound emoji; other controls stay invalid.
+        scalar.value != 0x200D && CharacterSet.controlCharacters.contains(scalar)
     }
 
     static func fileBytes(_ url: URL) throws -> Int64 {

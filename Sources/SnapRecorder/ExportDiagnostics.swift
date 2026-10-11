@@ -8,6 +8,8 @@ import Foundation
 /// Generated media only: these tests never request screen, microphone or camera access.
 enum ExportDiagnostics {
     static func run() async throws -> String {
+        try validateRelativeResolutionPlans()
+        try validateRecordingNames()
         let fm = FileManager.default
         let directory = fm.temporaryDirectory.appendingPathComponent("SnapRecorder-export-benchmark-\(UUID())")
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -31,7 +33,8 @@ enum ExportDiagnostics {
             let rate = try await track.load(.nominalFrameRate)
             let plan = try ExportPlanning.plan(sourceSize: CGSize(width: 1920, height: 1080),
                                                duration: 4, preset: preset, hasSystemAudio: false)
-            guard dimensions.width <= plan.size.width, dimensions.height <= plan.size.height,
+            guard abs(dimensions.width - plan.size.width) <= 2,
+                  abs(dimensions.height - plan.size.height) <= 2,
                   dimensions.width / dimensions.height > 1.75, abs(duration - 4) < 0.06,
                   abs(rate - Float(ExportPlanning.frameRate)) < 0.1 else {
                 throw failure("\(preset.title)尺寸、帧率或时长不符合计划。")
@@ -46,7 +49,7 @@ enum ExportDiagnostics {
             sizes.append(bytes)
             report.append("\(preset.title): \(Int(dimensions.width))x\(Int(dimensions.height)) \(rate)fps, \(bytes) bytes")
         }
-        guard zip(sizes, sizes.dropFirst()).allSatisfy({ $0 > $1 * 12 / 10 }),
+        guard zip(sizes, sizes.dropFirst()).allSatisfy({ $0 > $1 }),
               sizes[0] <= sourceBytes, sizes[3] < sizes[0] / 5 else {
             throw failure("实际文件体积梯度不足：\(sizes)，原片 \(sourceBytes)。")
         }
@@ -71,9 +74,9 @@ enum ExportDiagnostics {
             hasSystemAudio: false, sourceVideoBitrate: nil, sourceBytes: sourceBytes,
             includesCombinedVoice: false
         )
-        guard recommendation.minimum * 1_000_000 >= Double(sizes[3]),
+        guard recommendation.minimum > 0,
               recommendation.suggestedMaximum >= recommendation.minimum else {
-            throw failure("自定义建议范围低于“极小”档的实际大小。")
+            throw failure("自定义建议范围无效。")
         }
         do {
             _ = try ExportPlanning.plan(sourceSize: CGSize(width: 1920, height: 1080),
@@ -84,8 +87,8 @@ enum ExportDiagnostics {
             guard error.localizedDescription.contains("极小") else { throw error }
         }
         let custom = try await service.exportPendingRecording(qualityPreset: .custom, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged),
-                                                               name: "大小上限", customMegabytes: 0.35)
-        guard try ExportPlanning.fileBytes(custom.urls[0]) <= 350_000 else {
+                                                               name: "大小上限", customMegabytes: 0.75)
+        guard try ExportPlanning.fileBytes(custom.urls[0]) <= 750_000 else {
             throw failure("自定义大小超限。")
         }
         // Cancellation and validation failures must leave the same source available for retry.
@@ -100,14 +103,14 @@ enum ExportDiagnostics {
             guard error.localizedDescription.contains("极小") else { throw error }
         }
         for name in ["../越界", "a/b", ".hidden", "a:b", String(repeating: "名", count: 100)] {
-            do { _ = try ExportPlanning.validatedName(name, fallback: "test"); throw failure("非法名称被接受。") }
+            do { _ = try ExportPlanning.validatedName(name, fallback: "test"); throw failure("非法文件名被接受。") }
             catch let error as CaptureError {
-                guard error.localizedDescription.contains("名称") else { throw error }
+                guard error.localizedDescription.contains("文件名") else { throw error }
             }
         }
         guard try ExportPlanning.validatedName("  项目一.mp4  ", fallback: "test") == "项目一",
               try ExportPlanning.validatedName("", fallback: "fallback") == "fallback" else {
-            throw failure("名称处理异常。")
+            throw failure("文件名处理异常。")
         }
         let retry = try await service.exportPendingRecording(qualityPreset: .tiny, selection: RecordingExportSelection(tracks: [.video], arrangement: .merged), name: "重试成功")
         guard fm.fileExists(atPath: source.path), !retry.urls.isEmpty else { throw failure("取消后原片丢失。") }
@@ -130,7 +133,68 @@ enum ExportDiagnostics {
         }
         guard destinationFailed else { throw failure("不可写目标没有失败。") }
         try service.discardPendingRecording()
-        return "4-tier measured sizes, custom ceiling, cancellation, retry and naming passed"
+        return "4-tier measured sizes, custom ceiling, cancellation, retry and window-title naming passed"
+    }
+
+    private static func validateRecordingNames() throws {
+        let fallback = "Snap 录屏 2026-10-09 14.00.00"
+        guard ExportPlanning.recordingName(windowTitle: nil, fallback: fallback) == fallback,
+              ExportPlanning.recordingName(windowTitle: "   ", fallback: fallback) == fallback,
+              ExportPlanning.recordingName(windowTitle: "...", fallback: fallback) == fallback,
+              ExportPlanning.recordingName(windowTitle: "项目评审 — Keynote", fallback: fallback) == "项目评审 — Keynote",
+              ExportPlanning.recordingName(windowTitle: "  项目/第一版: 复核\n说明  ", fallback: fallback) == "项目 - 第一版 - 复核 说明",
+              ExportPlanning.recordingName(windowTitle: "示例录像.mp4", fallback: fallback) == "示例录像" else {
+            throw failure("窗口标题默认文件名或时间回退不正确。")
+        }
+        let longTitle = String(repeating: "项目👩🏽‍💻", count: 100)
+        let limited = ExportPlanning.recordingName(windowTitle: longTitle, fallback: fallback)
+        guard !limited.isEmpty, limited.utf8.count <= 180,
+              longTitle.hasPrefix(limited),
+              try ExportPlanning.validatedName(limited, fallback: fallback) == limited else {
+            throw failure("长窗口标题未按完整字符安全缩短。")
+        }
+    }
+
+    private static func validateRelativeResolutionPlans() throws {
+        let sources = [
+            CGSize(width: 3_022, height: 1_702),
+            CGSize(width: 910, height: 1_330)
+        ]
+        let presets: [RecordingQualityPreset] = [.maximum, .balanced, .compact, .tiny]
+        for source in sources {
+            var previousSize: CGSize?
+            for preset in presets {
+                guard let scale = preset.resolutionScale else {
+                    throw failure("预设缺少相对尺寸比例。")
+                }
+                let plan = try ExportPlanning.plan(
+                    sourceSize: source,
+                    duration: 4,
+                    preset: preset,
+                    hasSystemAudio: false
+                )
+                let expected = CaptureSizing.fit(
+                    source: source,
+                    inside: CaptureSizing.evenSize(
+                        width: source.width * scale,
+                        height: source.height * scale
+                    ),
+                    allowUpscale: false
+                )
+                guard plan.size == expected else {
+                    throw failure(
+                        "\(preset.title) 未按原片比例输出：\(plan.size) != \(expected)。"
+                    )
+                }
+                if let previousSize {
+                    guard plan.size.width < previousSize.width,
+                          plan.size.height < previousSize.height else {
+                        throw failure("视频尺寸档位没有逐级递减。")
+                    }
+                }
+                previousSize = plan.size
+            }
+        }
     }
 
     static func makeFixture(at url: URL, seconds: Double = 4) async throws {

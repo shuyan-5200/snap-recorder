@@ -24,10 +24,10 @@
   --signal: #ee5a24;
   --signal-deep: #b8430f;
   --signal-glow: rgba(238, 90, 36, 0.5);
-  --led-on: #fff3cf;
+  --led-on: #a8eb8a;
   --led-off: #75736e;
   --led-ring: #3a3936;
-  --led-glow: rgba(255, 243, 207, 0.6);
+  --led-glow: rgba(168, 235, 138, 0.6);
   --warn: #7a4300;
   --ok: #2a5e39;
 
@@ -343,7 +343,7 @@ code { font-family: var(--mono); font-size: 0.86em; color: var(--ink-2); }
 .key-dark:active, .key-dark.is-pressed { background: #232322; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); }
 .key-dark:disabled, .key-dark.is-disabled { border-color: rgba(35, 35, 34, 0.2); background: var(--alu-lo); color: var(--disabled); box-shadow: none; }
 .key-rec {
-  width: 100%; height: 48px; border-color: rgba(120, 40, 8, 0.55); border-radius: var(--r-10);
+  width: 100%; height: 44px; border-color: rgba(120, 40, 8, 0.55); border-radius: var(--r-10);
   background: linear-gradient(180deg, #f27040, var(--signal)); color: var(--graphite); font-size: 15px; line-height: 20px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 0 var(--signal-deep), 0 4px 10px rgba(184, 67, 15, 0.3);
 }
@@ -780,7 +780,7 @@ code { font-family: var(--mono); font-size: 0.86em; color: var(--ink-2); }
 .custom-size { display: flex; flex-direction: column; gap: 6px; }
 .estimate {
   margin: 0; padding: 7px 10px; border-radius: var(--r-3); background: var(--window); box-shadow: var(--well-shadow);
-  color: var(--readout); font: 400 11px/16px var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--readout); font: 400 11px/16px var(--mono); font-variant-numeric: tabular-nums; text-align: center;
 }
 .estimate:empty { display: none; }
 .msg { margin: 0; font-size: 12px; line-height: 18px; }
@@ -846,7 +846,7 @@ code { font-family: var(--mono); font-size: 0.86em; color: var(--ink-2); }
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 26px; }
 .swatch { margin: 0; overflow: hidden; border-radius: var(--r-6); background: var(--brush), var(--alu); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 0 var(--groove), 0 4px 10px rgba(0, 0, 0, 0.08); }
 .swatch-color { display: block; height: 64px; background: var(--c); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12); }
-.swatch-led { background: radial-gradient(circle, var(--c) 0 10px, rgba(255, 243, 207, 0.4) 11px 18px, var(--window) 19px); }
+.swatch-led { background: radial-gradient(circle, var(--c) 0 10px, rgba(168, 235, 138, 0.4) 11px 18px, var(--window) 19px); }
 .swatch figcaption { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px; font-size: 12px; line-height: 1.5; color: var(--engrave); }
 .swatch b { color: var(--graphite); font-size: 13px; font-weight: 600; }
 .swatch code { font-size: 11px; }
