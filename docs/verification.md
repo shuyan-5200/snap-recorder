@@ -2,6 +2,16 @@
 
 This document records reproducible project-level checks without retaining user recordings, window titles, personal paths, or private media.
 
+## 2.0.0 / build 26 — 2026-10-11
+
+- Based on merged PR #18 at `74dda1f`. Runtime source is unchanged; this release updates version metadata, public product copy and screenshots. The older local close/UI branch is not included.
+- `swift build -c release` and the complete `--self-test` passed. Generated-media checks cover export tiers and measured custom ceilings, repeated exports, track combinations, audio alignment, camera composition and portrait protection. No new physical screen, microphone or camera recording was used for this release check.
+- The Universal App contains `x86_64 arm64`, reports `2.0.0 / 26`, and passes strict deep signature verification. The ZIP was extracted and its signature and file bytes verified. Its only four files are the executable, Info.plist, icon and signature resources; no captures or test media are packaged.
+- Package: `Snap-Recorder-v2.0.0-macOS-universal.zip`, 2,364,003 bytes; SHA-256 `f7e20d34d3d2b0292791cd0b630bcf2db35a97c195a7b50251e35cbd466c55e8`.
+- Five native views are rendered from the production SwiftUI components at 3x with curated demonstration data: window selection, multiple displays, region controls, portrait drawer and export drawer. The offscreen renderer never captures the desktop or a pointer, enumerates real windows, or starts camera/microphone hardware. Two additional drawer-detail images keep controls readable on small screens. The app runtime does not include the rendering harness or fixture setters.
+- Reproduce the screenshots with `python3 scripts/render-marketing-screenshots.py`. The helper compiles a temporary executable and disposes of it; original production UI source files remain unchanged. Full panels are 1680×1680, expanded drawers 2814×1680 and drawer details 1062×1608 PNG. Public page captions disclose demonstration content.
+- README and the product page link directly to the new versioned package. Older releases and their assets remain intact. Local file-URL browser preview is unavailable under the browser policy; published HTTPS verification is tracked separately from these static/source checks.
+
 ## 2026-10-09: portrait protection quantization fix
 
 - The portrait production processor is unchanged. Only active-filter protection checks now tolerate at most one 8-bit level per RGB channel; alpha is still exact. Original/off/no-face bypass and detection-lifecycle identity comparisons remain byte-identical.
