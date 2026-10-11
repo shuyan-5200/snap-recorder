@@ -3,219 +3,77 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Snap Recorder — 极简录屏，自在导出</title>
-  <meta name="description" content="像一台趁手的录音机。Snap Recorder 以拉丝铝、石墨表盘与信号橙打造器物风格的 Mac 录屏工具，支持任意窗口、整屏、局部录制与自由导出，全程本地处理。">
-  <meta name="theme-color" content="#d4d2cd">
-  <meta name="color-scheme" content="light">
+  <title>Snap Recorder 2.0 — 把想法，录清楚</title>
+  <meta name="description" content="为 Mac 打造的轻巧录屏工具。窗口、整屏、局部自由录；人像、声音随心组合，一次录制多种导出。免费开源，全程本地处理。">
+  <meta name="theme-color" content="#dedcd6">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Snap Recorder — 极简录屏，自在导出">
-  <meta property="og:description" content="器物之形，轻巧之用。为 Mac 打造的本地录屏工具。">
+  <meta property="og:title" content="Snap Recorder 2.0 — 把想法，录清楚">
+  <meta property="og:description" content="想录哪，就录哪。一次录制，多种交付。免费开源的 Mac 录屏工具。">
   <meta property="og:url" content="https://shuyan-5200.github.io/snap-recorder/">
-  <meta property="og:image" content="https://shuyan-5200.github.io/snap-recorder/images/snap-recorder-main.png">
-  <meta property="og:image:width" content="1120">
-  <meta property="og:image:height" content="1234">
-  <meta property="og:image:alt" content="Snap Recorder 的真实器物界面：拉丝铝面板、来源旋钮与信号橙录制键">
-  <link rel="canonical" href="https://shuyan-5200.github.io/snap-recorder/">
+  <meta property="og:image" content="https://shuyan-5200.github.io/snap-recorder/images/v2.0/main.png">
+  <meta property="og:image:width" content="1680">
+  <meta property="og:image:height" content="1680">
   <link rel="icon" type="image/svg+xml" href="images/snap-recorder-icon.svg">
-  <link rel="stylesheet" href="site.css?v=1.5.0">
+  <link rel="stylesheet" href="site.css?v=2.0.0">
 </head>
 <body>
-  <a class="skip-link" href="#main">跳到正文</a>
-  <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="#main" aria-label="Snap Recorder 首页">
-        <img src="images/snap-recorder-icon.svg" alt="" width="40" height="40">
-        <span>SNAP RECORDER</span>
-      </a>
-      <nav class="nav-links" aria-label="主导航">
-        <a href="#design">器物设计</a>
-        <a href="#modes">录制</a>
-        <a href="#export">导出</a>
-        <a href="#specs">规格</a>
-      </nav>
-      <a class="key key-small" href="#download">下载 <span aria-hidden="true">↓</span></a>
-    </div>
-  </header>
-
+  <a class="skip" href="#main">跳到正文</a>
+  <header class="nav"><div class="wrap nav-inner">
+    <a class="brand" href="#main"><img src="images/snap-recorder-icon.svg" width="38" height="38" alt=""><span>SNAP RECORDER</span><b>2.0</b></a>
+    <nav aria-label="主要导航"><a href="#record">录制</a><a href="#export">导出</a><a href="#portrait">人像</a></nav>
+    <a class="button compact dark" href="#download">下载 Mac 版 <span aria-hidden="true">↓</span></a>
+  </div></header>
   <main id="main">
-    <section class="hero wrap" aria-labelledby="hero-title">
-      <div class="hero-topline"><span>SCREEN RECORDER FOR MAC</span><span>V 1.5.0 <span class="topline-divider">/</span> LOCAL FIRST</span></div>
-      <div class="hero-layout">
-        <div class="hero-copy">
-          <p class="eyebrow">器物之形，轻巧之用。</p>
-          <h1 id="hero-title">极简录屏，<br>自在导出。</h1>
-          <p class="hero-lead">像一台趁手的录音机，<br>把屏幕上的此刻，好好留下。</p>
-          <p class="hero-description">录下任意窗口、整个屏幕或任意区域。<br>视频、电脑声音、人声，按需合并或分轨。</p>
-          <div class="actions">
-            <a class="key key-dark" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v1.5.0/Snap-Recorder-v1.5.0-macOS-universal.zip">下载 Mac 版 <span aria-hidden="true">↓</span></a>
-            <a class="text-link" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">查看源码 <span aria-hidden="true">↗</span></a>
-          </div>
-          <p class="download-meta">macOS 14+ <span>·</span> Apple Silicon / Intel <span>·</span> 约 2.2 MB</p>
-          <div class="hero-engraving" aria-hidden="true"><span class="ruler"></span><span>DESIGNED TO RECORD.</span></div>
-        </div>
-        <figure class="hero-product">
-          <div class="product-label"><span>01 / 录前面板</span><span>真实 Mac 界面</span></div>
-          <div class="product-mount">
-            <i class="screw screw-tl" aria-hidden="true"></i><i class="screw screw-tr" aria-hidden="true"></i>
-            <a class="shot-link" href="images/snap-recorder-main.png" target="_blank" rel="noopener" aria-label="打开主面板高清实机图">
-              <img src="images/snap-recorder-main.png" alt="器物风格的 Snap Recorder 主面板，包含来源旋钮、局部录像设置、四路开关与橙色录制键" width="1120" height="1234" fetchpriority="high">
-            </a>
-          </div>
-          <figcaption><span>拉丝铝面板 / 旋钮 / 实体键</span><a href="images/snap-recorder-main.png" target="_blank" rel="noopener">查看 2× 原图 ↗</a></figcaption>
-        </figure>
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="led"></span> 为表达而生的 MAC 录屏工具</p>
+        <h1>把想法，<br>录清楚。</h1>
+        <p class="lead">产品演示、教程讲解、灵感记录。<br>想展示的画面，随手就能录下来。</p>
+        <div class="actions"><a class="button dark" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.0/Snap-Recorder-v2.0.0-macOS-universal.zip">下载 Snap Recorder 2.0 <span aria-hidden="true">↓</span></a></div>
+        <p class="meta">macOS 14+ · Apple Silicon / Intel<br>免费开源 · 无需账号 · 全程本地</p>
+        <a class="quiet-link" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">在 GitHub 上看看 ↗</a>
       </div>
-      <div class="spec-strip" aria-label="产品概览">
-        <p><b>03</b><span>录制来源</span></p>
-        <p><b>05</b><span>视频大小档位</span></p>
-        <p><b>LOCAL</b><span>全程本地处理</span></p>
-        <p><b>MIT</b><span>开源 · 无第三方库</span></p>
+      <figure class="hero-art" id="design">
+        <div class="figure-label"><span>READY WHEN YOU ARE.</span><span>SNAP / 2.0</span></div>
+        <a class="screen" href="images/v2.0/main.png" target="_blank" rel="noopener"><img src="images/v2.0/main.png" width="1680" height="1680" alt="Snap Recorder 主界面：选择窗口并独立控制画面与声音" fetchpriority="high"></a>
+        <figcaption>有质感的器物界面，一颗橙色录制键。<span>点击查看原图 ↗</span></figcaption>
+      </figure>
+    </section>
+    <div class="wrap promise-strip"><span>只录想展示的</span><span>一次录制，多次导出</span><span>你的内容，留在你的 Mac</span></div>
+
+    <section class="section wrap" id="record">
+      <div class="section-head"><div><p class="eyebrow">01 / RECORD</p><h2>想录哪，就录哪。</h2></div><p>一个窗口，一块屏幕，或你框出的那一部分。<br>完整保留比例，把无关的画面留在外面。</p></div>
+      <div class="mode-grid">
+        <article><div class="mode-copy"><h3>多屏演示，选对主场。</h3><p>缩略图确认画面，多显示器随手切换。</p></div><a class="screen" href="images/v2.0/display.png" target="_blank" rel="noopener"><img src="images/v2.0/display.png" width="1680" height="1680" alt="整个屏幕模式：显示器编号切换与完整屏幕缩略图" loading="lazy"></a></article>
+        <article><div class="mode-copy"><h3>框住重点，表达更专注。</h3><p>横屏、竖屏、自由比例，再加一点聚焦。</p></div><a class="screen" href="images/v2.0/region.png" target="_blank" rel="noopener"><img src="images/v2.0/region.png" width="1680" height="1680" alt="局部录像模式：比例、圆角、暗角与聚焦蒙版" loading="lazy"></a></article>
       </div>
     </section>
 
-    <section class="section design-section" id="design" aria-labelledby="design-title">
-      <div class="wrap">
-        <div class="section-label"><span>01 / DESIGN LANGUAGE</span><span>器物 · Instrument</span></div>
-        <div class="design-layout">
-          <figure class="icon-study">
-            <div class="study-top"><span>SNAP RECORDER</span><span>INSTRUMENT</span></div>
-            <div class="study-art">
-              <span class="study-cross cross-tl" aria-hidden="true"></span><span class="study-cross cross-tr" aria-hidden="true"></span>
-              <span class="study-cross cross-bl" aria-hidden="true"></span><span class="study-cross cross-br" aria-hidden="true"></span>
-              <img src="images/snap-recorder-icon.svg" alt="拉丝铝机身、内凹石墨表盘、机械刻度与信号橙录制灯构成的应用图标" width="360" height="360" loading="lazy">
-            </div>
-            <figcaption>拉丝铝 <span>×</span> 石墨 <span>×</span> 信号橙</figcaption>
-          </figure>
-          <div class="design-copy">
-            <h2 id="design-title">给数字工具，<br>一点器物的温度。</h2>
-            <p class="section-intro">我们想做一件简洁、可靠、愿意常放手边的工具。灵感来自做工考究的录音机：材质有触感，操作有回应，状态一眼可知。</p>
-            <dl class="design-principles">
-              <div><dt><span>01</span> 铝灰为底，石墨为字</dt><dd>细密拉丝、机加工刻线与上亮下暗的光影，构成安静、连续的操作面板。</dd></div>
-              <div><dt><span>02</span> 让状态有位置、有触感</dt><dd>旋钮指向来源，拨杆表示开关，按键下沉、灯亮起；读数收进深色显示窗。</dd></div>
-              <div><dt><span class="signal-led" aria-hidden="true"></span> 把橙色，留给录制</dt><dd>信号橙只标记开始录制与录制状态。其余交给铝、石墨与暖白，让注意力回到画面。</dd></div>
-            </dl>
-            <a class="text-link" href="https://github.com/shuyan-5200/snap-recorder/tree/main/%E8%A7%86%E8%A7%89%E8%A7%84%E8%8C%83/%E5%99%A8%E7%89%A9" target="_blank" rel="noopener">查看正式视觉规范 <span aria-hidden="true">↗</span></a>
-          </div>
-        </div>
-      </div>
+    <section class="section wide-section" id="export"><div class="wrap">
+      <div class="section-head"><div><p class="eyebrow">02 / EXPORT</p><h2>一次录制，多种交付。</h2></div><p>演示视频、独立人声、轻巧分享版。<br>换个组合，再导出一份，不必重录。</p></div>
+      <figure class="wide-shot"><a class="screen" href="images/v2.0/export.png" target="_blank" rel="noopener"><picture><source media="(max-width: 540px)" srcset="images/v2.0/export-detail.png" width="1062" height="1608"><img src="images/v2.0/export.png" width="2814" height="1680" alt="右侧导出抽屉：视频、电脑声音、人声的合并与分轨，以及画质和文件名" loading="lazy"></picture></a><figcaption>录制结束，右侧展开导出。需要的内容，一次选好。<span>点击查看原图 ↗</span></figcaption></figure>
+      <div class="feature-row"><div><h3>声音自由组合</h3><p>视频、电脑声音、人声，合并或分轨；也能只保存音频。</p></div><div><h3>高清，或者轻巧</h3><p>四档大小随手选。有体积限制，直接填写视频 MB 上限。</p></div><div><h3>这一份，还能再来一份</h3><p>保存后继续换设置导出，已有文件自动避让。</p></div></div>
+    </div></section>
+
+    <section class="section wrap" id="portrait">
+      <div class="section-head"><div><p class="eyebrow">03 / PRESENT</p><h2>讲解，也有你的身影。</h2></div><p>人像随画面同行，鼠标点亮操作重点。<br>让观众看见你，也跟得上每一步。</p></div>
+      <figure class="wide-shot"><a class="screen" href="images/v2.0/portrait.png" target="_blank" rel="noopener"><picture><source media="(max-width: 540px)" srcset="images/v2.0/portrait-detail.png" width="1062" height="1608"><img src="images/v2.0/portrait.png" width="2814" height="1680" alt="左侧人像样式抽屉：位置、形状、大小、镜像与自然修饰" loading="lazy"></picture></a><figcaption>左侧调人像，主面板仍在手边。<span>点击查看原图 ↗</span></figcaption></figure>
+      <div class="feature-row"><div><h3>人像放在哪里，都合适</h3><p>四角位置、圆形或圆角、三档大小与镜像。</p></div><div><h3>自然一点，也可以</h3><p>原图、自然、柔和，按需选择，只处理摄像头画面。</p></div><div><h3>每一次点击，都清楚</h3><p>鼠标准星与点击波纹，配合局部聚焦，突出操作重点。</p></div></div>
     </section>
 
-    <section class="section" id="modes" aria-labelledby="modes-title">
-      <div class="wrap">
-        <div class="section-label"><span>02 / CAPTURE</span><span>把范围选好，按下录制。</span></div>
-        <div class="section-heading"><h2 id="modes-title">三种来源，<br class="mobile-break">刚好覆盖日常。</h2><p>保留原始比例，让你想展示的画面成为主角。</p></div>
-        <div class="mode-bank">
-          <article class="mode">
-            <div class="mode-screen" aria-hidden="true">
-              <div class="diagram browser-diagram"><div class="diagram-bar"><i></i><i></i><i></i></div><div class="diagram-content"><span></span><span></span><span></span></div></div>
-              <span class="screen-mark">WINDOW / 01</span>
-            </div>
-            <div class="mode-heading"><span class="number">01</span><h3>任意窗口</h3></div>
-            <p>从任意应用中选择一个窗口独立录制，完整保留原始比例。橙色框标记目标，其他应用与桌面不会进入成片。</p>
-            <span class="mode-detail">适合单一应用演示与产品介绍</span>
-          </article>
-          <article class="mode">
-            <div class="mode-screen" aria-hidden="true">
-              <div class="diagram display-diagram"><span class="display-menu"></span><span class="display-window"></span></div>
-              <span class="screen-mark">DISPLAY / 02</span>
-            </div>
-            <div class="mode-heading"><span class="number">02</span><h3>整个屏幕</h3></div>
-            <p>录制当前主显示器，保持原生像素与画面比例。跨应用的工作过程，一次记下。</p>
-            <span class="mode-detail">适合教学与完整工作流</span>
-          </article>
-          <article class="mode">
-            <div class="mode-screen" aria-hidden="true">
-              <div class="diagram region-diagram"><span>16:9</span><i></i><i></i><i></i><i></i></div>
-              <span class="screen-mark">REGION / 03</span>
-            </div>
-            <div class="mode-heading"><span class="number">03</span><h3>局部录像</h3></div>
-            <p>框住需要的部分。七种比例、圆角与聚焦蒙版，既可自由调整，也可锁定构图。</p>
-            <span class="mode-detail"><kbd>⌘E</kbd> 锁定范围 <span>·</span> <kbd>⌘R</kbd> 开始录制</span>
-          </article>
-        </div>
-        <p class="section-footnote">电脑声音、人声与摄像头独立开关。人声和摄像头默认关闭，开启时才申请相应权限。</p>
-      </div>
+    <section class="section wrap" id="privacy">
+      <div class="local-panel"><div><p class="eyebrow">LOCAL FIRST. ALWAYS.</p><h2>你的屏幕，<br>只留在你的 Mac。</h2></div><div class="local-copy"><p>不用登录，不用上传。<br>画面、人像和声音全在本机处理，<br>文件直接保存到「下载」。</p><a class="quiet-link" href="https://github.com/shuyan-5200/snap-recorder/blob/main/PRIVACY.md" target="_blank" rel="noopener">隐私说明 ↗</a></div></div>
+      <div class="workflow"><b>选来源</b><span>→</span><b>录制</b><span>→</span><b>命名保存</b><p>随时暂停，不满意就重来。</p></div>
     </section>
 
-    <section class="section export-section" id="export" aria-labelledby="export-title">
-      <div class="wrap">
-        <div class="section-label"><span>03 / EXPORT</span><span>一次录制，多种去处。</span></div>
-        <div class="export-layout">
-          <figure class="export-product">
-            <div class="product-label"><span>02 / 导出工作区</span><span>真实 Mac 界面</span></div>
-            <a class="shot-link" href="images/snap-recorder-export.png" target="_blank" rel="noopener" aria-label="打开导出工作区高清实机图"><img src="images/snap-recorder-export.png" alt="Snap Recorder 真实导出界面：深色读数窗、内容互锁键、合并与分轨、五档视频大小滑块" width="1120" height="984" loading="lazy"></a>
-            <figcaption><span>深色显示窗 / 互锁键 / 五挡滑块</span><a href="images/snap-recorder-export.png" target="_blank" rel="noopener">查看 2× 原图 ↗</a></figcaption>
-          </figure>
-          <div class="export-copy">
-            <h2 id="export-title">留下一份，<br>也能各留一份。</h2>
-            <p class="section-intro">勾选视频、电脑声音与人声，选择合并或分轨。命名、保存，再为不同用途继续导出。</p>
-            <dl class="export-routes">
-              <div><dt>合并<span class="route-format">MP4</span></dt><dd>画面和所选声音，收进同一个视频。</dd></div>
-              <div><dt>分轨<span class="route-format">MP4 + M4A</span></dt><dd>无声视频与各路声音，分别保留。</dd></div>
-              <div><dt>只要声音<span class="route-format">M4A</span></dt><dd>单独导出一路声音，或把两路混合。</dd></div>
-            </dl>
-            <p class="quiet-note">原片保留到本次工作结束。重复导出自动编号，已保存的文件不会被覆盖。</p>
-          </div>
-        </div>
-        <div class="quality-module">
-          <div class="module-heading"><h3>五档大小，按用途选择。</h3><span>OUTPUT / 30 FPS</span></div>
-          <ol class="quality-scale">
-            <li class="quality-default"><span class="quality-tick" aria-hidden="true"></span><h4>高清 <small>默认</small></h4><p>原始像素 100%</p><span>1:1 保留录制画面</span></li>
-            <li><span class="quality-tick" aria-hidden="true"></span><h4>日常</h4><p>原始像素 75%</p><span>日常演示与分享</span></li>
-            <li><span class="quality-tick" aria-hidden="true"></span><h4>小巧</h4><p>原始像素 50%</p><span>进一步节省空间</span></li>
-            <li><span class="quality-tick" aria-hidden="true"></span><h4>极小</h4><p>原始像素 25%</p><span>随手记下一段</span></li>
-            <li><span class="quality-tick" aria-hidden="true"></span><h4>自定义</h4><p>填写 MB 上限</p><span>适配明确的限制</span></li>
-          </ol>
-          <p class="quiet-note">始终保持画面比例。小体积档可能降低尺寸；自定义上限按每个 MP4 计算，最低值会随录制内容提示，独立音频另计。</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="privacy" aria-labelledby="privacy-title">
-      <div class="wrap">
-        <div class="local-panel">
-          <i class="screw screw-tl" aria-hidden="true"></i><i class="screw screw-tr" aria-hidden="true"></i>
-          <div class="local-copy"><p class="eyebrow">04 / LOCAL FIRST</p><h2 id="privacy-title">你的屏幕，<br>只留在你的 Mac 上。</h2><p>无账号、无上传、无统计。屏幕、摄像头与声音都在本机处理，成片直接保存到「下载」。</p></div>
-          <div class="local-readout"><span class="readout-label">PROCESSING LOCATION</span><strong>ON YOUR MAC</strong><span class="readout-rule" aria-hidden="true"></span><p><span class="warm-led" aria-hidden="true"></span> 本地采集 <span>/</span> 本地编码 <span>/</span> 本地保存</p></div>
-        </div>
-        <div class="workflow">
-          <div class="workflow-heading"><h3>从开始到保存，<br>保持简单。</h3><span>THE RECORDING FLOW</span></div>
-          <ol><li><b>01</b><h4>选择来源</h4><p>画面范围与声音，按需开启。</p></li><li><b>02</b><h4>录制</h4><p>3 秒倒计时，随时暂停或结束。</p></li><li><b>03</b><h4>命名与导出</h4><p>确认保存，也可继续导出一份。</p></li></ol>
-        </div>
-      </div>
-    </section>
-
-    <section class="section specs-section" id="specs" aria-labelledby="specs-title">
-      <div class="wrap specs-layout">
-        <div><p class="eyebrow">05 / TECHNICAL DATA</p><h2 id="specs-title">小工具，<br>规格清楚。</h2><a class="text-link" href="https://github.com/shuyan-5200/snap-recorder/blob/main/docs/product-spec.md" target="_blank" rel="noopener">完整产品说明 ↗</a></div>
-        <dl class="specs-table">
-          <div><dt>版本</dt><dd>1.5.0 / build 20 · Universal ZIP 约 2.2 MB</dd></div>
-          <div><dt>平台</dt><dd>macOS 14+ · Apple Silicon / Intel<br><span>人声录制需 macOS 15+</span></dd></div>
-          <div><dt>画面</dt><dd>原生像素优先，最高约 3840 × 2160<br><span>采集与导出最高 30 帧/秒</span></dd></div>
-          <div><dt>输出</dt><dd>MP4 / H.264 / SDR / Rec.709<br>M4A / AAC</dd></div>
-          <div><dt>人像与鼠标</dt><dd>摄像头画中画、可选自然修饰<br>白色准星、点击波纹与隐藏鼠标</dd></div>
-          <div><dt>开放与边界</dt><dd>MIT 开源 · 无第三方库<br><span>不含编辑器、剪辑、多显示器选择或云分享</span></dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <section class="download-section wrap" id="download" aria-labelledby="download-title">
-      <div class="download-panel">
-        <i class="screw screw-tl" aria-hidden="true"></i><i class="screw screw-tr" aria-hidden="true"></i><i class="screw screw-bl" aria-hidden="true"></i><i class="screw screw-br" aria-hidden="true"></i>
-        <img src="images/snap-recorder-icon.svg" width="104" height="104" alt="" loading="lazy">
-        <p class="eyebrow">READY WHEN YOU ARE.</p>
-        <h2 id="download-title">下一次想记录时，<br>它就在手边。</h2>
-        <p>下载后拖入「应用程序」，开始你的第一段录屏。</p>
-        <div class="actions"><a class="key key-dark" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v1.5.0/Snap-Recorder-v1.5.0-macOS-universal.zip">下载 1.5.0 <span aria-hidden="true">↓</span></a><a class="key" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a></div>
-        <p class="download-meta">macOS 14+ <span>·</span> Apple Silicon / Intel <span>·</span> 约 2.2 MB</p>
-        <p class="install-note">尚未经过 Apple 公证；首次启动如被拦截，请右键选择「打开」，或在系统设置的「隐私与安全性」中允许。<a href="https://github.com/shuyan-5200/snap-recorder#安装" target="_blank" rel="noopener">安装说明 ↗</a></p>
-      </div>
+    <section class="download wrap" id="download">
+      <img src="images/snap-recorder-icon.svg" width="88" height="88" alt="" loading="lazy">
+      <p class="eyebrow">SMALL TOOL. CLEAR IDEAS.</p><h2>下一次想解释，<br>直接录给他看。</h2>
+      <div class="actions"><a class="button dark" href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.0/Snap-Recorder-v2.0.0-macOS-universal.zip">免费下载 2.0 <span aria-hidden="true">↓</span></a><a class="button" href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a></div>
+      <p class="meta">macOS 14+ · Apple Silicon / Intel · MIT 开源<br>人声录制需 macOS 15+</p>
+      <details id="specs"><summary>安装说明</summary><p>解压后拖入「应用程序」，首次使用允许屏幕录制。摄像头和人声按需授权。应用尚未经过 Apple 公证，如首次启动被拦截，可在「系统设置 → 隐私与安全性」中允许打开。</p><a class="quiet-link" href="https://github.com/shuyan-5200/snap-recorder/blob/main/docs/product-spec.md" target="_blank" rel="noopener">完整产品说明 ↗</a></details>
     </section>
   </main>
-
-  <footer class="wrap footer">
-    <a class="brand" href="#main"><img src="images/snap-recorder-icon.svg" alt="" width="32" height="32"><span>SNAP RECORDER</span></a>
-    <nav aria-label="页尾导航"><a href="https://github.com/shuyan-5200/snap-recorder/blob/main/PRIVACY.md" target="_blank" rel="noopener">隐私说明</a><a href="https://github.com/shuyan-5200/snap-recorder/releases/latest" target="_blank" rel="noopener">版本与更新</a><a href="https://github.com/shuyan-5200/snap-recorder" target="_blank" rel="noopener">GitHub</a></nav>
-    <div class="footer-colophon"><span>© Snap Recorder · MIT License</span><span>极简 · 高清 · 本地处理</span></div>
-  </footer>
+  <footer class="wrap"><a class="brand" href="#main"><span>SNAP RECORDER</span><b>2.0</b></a><nav aria-label="页尾导航"><a href="https://github.com/shuyan-5200/snap-recorder/releases/tag/v2.0.0">更新记录</a><a href="https://github.com/shuyan-5200/snap-recorder/blob/main/PRIVACY.md">隐私</a><a href="https://github.com/shuyan-5200/snap-recorder">GitHub</a></nav><p>© Snap Recorder · MIT License <span>原生界面 · 演示内容 · 图片可点击放大</span></p></footer>
 </body>
 </html>
