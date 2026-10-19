@@ -3,8 +3,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT/build/Snap Recorder.app"
-ICONSET_DIR="$ROOT/.build/SnapRecorderIcon.iconset"
-MASTER_ICON="$ROOT/.build/SnapRecorderIcon-1024.png"
 BUNDLE_IDENTIFIER="io.github.shuyan-5200.SnapRecorder"
 SIGNING_IDENTITY="${SNAPRECORDER_CODESIGN_IDENTITY:--}"
 
@@ -21,16 +19,7 @@ lipo -create \
 strip -S -x "$APP_DIR/Contents/MacOS/SnapRecorder"
 cp "$ROOT/app/Info.plist" "$APP_DIR/Contents/Info.plist"
 
-rm -rf "$ICONSET_DIR"
-mkdir -p "$ICONSET_DIR"
-qlmanage -t -s 1024 -o "$ROOT/.build" "$ROOT/assets/SnapRecorderIcon.svg" >/dev/null 2>&1
-mv "$ROOT/.build/SnapRecorderIcon.svg.png" "$MASTER_ICON"
-for SIZE in 16 32 128 256 512; do
-    sips -z "$SIZE" "$SIZE" "$MASTER_ICON" --out "$ICONSET_DIR/icon_${SIZE}x${SIZE}.png" >/dev/null
-    DOUBLE=$((SIZE * 2))
-    sips -z "$DOUBLE" "$DOUBLE" "$MASTER_ICON" --out "$ICONSET_DIR/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/SnapRecorderIcon.icns"
+cp "$ROOT/app/SnapRecorderIcon.icns" "$APP_DIR/Contents/Resources/SnapRecorderIcon.icns"
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     # A plain ad-hoc signature uses the executable CDHash as its designated

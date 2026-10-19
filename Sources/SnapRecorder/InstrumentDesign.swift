@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-// “器物”视觉规范的令牌与部件。数值与 `视觉规范/器物/index.html` 一一对应，
-// 1pt 对应规范里的 1px；历史视觉探索不参与产品构建。
+// Shared colors and components for the native application interface.
 // 光从上方来：亮边在上、阴影在下。信号橙只用于录制。
 
 extension Color {

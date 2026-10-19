@@ -25,5 +25,6 @@ Before opening a pull request:
 2. Test both browser-window and full-screen capture when changing the capture path.
 3. Test microphone off, combined export, separate export, and selecting both export modes when changing audio code.
 4. Do not commit recordings, personal paths, credentials, build products, or permission databases.
+5. Keep marketing materials, design sources, visual specifications, screenshots, and working documents local. The repository uses a source allowlist; do not bypass it with `git add -f`.
 
 Please keep pull requests focused and explain the user-visible behavior that changed.

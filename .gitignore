@@ -1,3 +1,41 @@
+# Public source allowlist. Unlisted root files and directories stay local.
+/*
+!/.gitignore
+!/.github/
+!/AGENTS.md
+!/CONTRIBUTING.md
+!/LICENSE
+!/PRIVACY.md
+!/Package.swift
+!/README.md
+!/SECURITY.md
+!/Sources/
+!/app/
+!/scripts/
+
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/ci.yml
+/Sources/*
+!/Sources/SnapRecorder/
+/Sources/SnapRecorder/*
+!/Sources/SnapRecorder/*.swift
+/app/*
+!/app/Info.plist
+!/app/SnapRecorderIcon.icns
+/scripts/*
+!/scripts/build-app.sh
+
+# Private materials and working documents are never part of the public source.
+/marketing/
+/视觉规范/
+/assets/
+/docs/
+/_meta/
+/CHANGELOG.md
+
+# Local build products, recordings, editor state, and credentials.
 .DS_Store
 .build/
 build/

@@ -14,3 +14,5 @@
 - 实际代码修改后至少运行 `swift build -c release` 与 `.build/release/SnapRecorder --self-test`。
 - 首次涉及真实屏幕、麦克风或摄像头采集的验证，需要用户在 macOS 系统提示中批准对应权限。
 - 完整 Xcode 不是必需条件；可以使用 SwiftPM 与 `scripts/build-app.sh` 构建 `.app`。
+- 公开仓库仅保留产品源码、必要的构建资源与开源说明；`.gitignore` 使用允许清单。营销物料、宣传页面与截图、图标设计源稿、视觉规范和过程记录仅保存在本地，禁止强制加入版本控制。
+- 应用打包使用 `app/SnapRecorderIcon.icns` 成品图标，不依赖本地设计源稿。新增公开文件前检查实际提交内容；`.gitignore` 不会移除已经提交的文件或清除历史。
