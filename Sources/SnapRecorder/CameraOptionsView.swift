@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Settings occupy a left drawer in the recorder's own window. The main panel
 /// remains interactive and the drawer follows its movement and window level.
-/// 视觉为“器物”规范里的铝面板：位置用四颗带灯的键，形状、大小、自然修饰用互锁键。
+/// 视觉为“器物”规范里的铝面板：位置用四颗带显示窗图示的键，形状、大小、自然修饰用互锁键。
 struct CameraOptionsView: View {
     @Binding var settings: CameraOverlaySettings
     var dismiss: () -> Void
@@ -94,7 +94,7 @@ struct CameraOptionsView: View {
             HStack(spacing: 10) {
                 ZStack(alignment: alignment(for: position)) {
                     DisplayWindowBackground(cornerRadius: 2)
-                    LED(state: selected ? .lit : .off, size: 5)
+                    LED(state: selected ? .lit : .off, size: 5, inWindow: true)
                         .padding(2)
                 }
                 .frame(width: 30, height: 20)

@@ -49,18 +49,20 @@ enum Instrument {
     // 信号与状态
     static let signal = Color(hex: 0xEE5A24)
     static let signalDeep = Color(hex: 0xB8430F)
-    // 指示灯与录制灯同用信号橙，不另设灯色；灭灯压暗到灯圈附近，保证亮 / 灭对比 ≥ 3:1。
-    static let ledOn = signal
-    static let ledGlow = signal.opacity(0.5)
-    static let ledOff = Color(hex: 0x3F3E3B)
+    // 选中与开启：石墨墨点，实心为开 / 选中，空心圈为关 / 未选；不用彩色灯。
+    static let markOn = graphite
+    static let markRing = Color(hex: 0x75736E)
     static let ledRing = Color(hex: 0x3A3936)
-    // 拨杆槽：关为石墨槽；开时在石墨槽上罩 72% 深信号橙，成为压暗的橙槽，与指示灯同步，不抢录制键。
-    static let slotOff = ledRing
-    static let slotOnTint = signalDeep.opacity(0.72)
+    // 拨杆槽：露出的槽面关为浅铝铣槽，开为石墨，前后明度差约 5.6:1，不发光、无彩色。
+    static let slotOff = LinearGradient(colors: [Color(hex: 0xABA9A3), Color(hex: 0xC0BEB8)], startPoint: .top, endPoint: .bottom)
+    static let slotOn = ledRing
+    // 显示窗里的光点（导出走马灯、人像位置图示）：与读数同系的暖白。
+    static let lampWarm = Color(hex: 0xF6EEDF)
+    static let lampGlow = Color(hex: 0xFFF1D6).opacity(0.6)
+    static let lampOff = Color(hex: 0x3F3E3B)
     static let warn = Color(hex: 0x7A4300)
 
     static let actionHeight: CGFloat = 44
-    static let channelIndicatorSpacing: CGFloat = 5
 
     /// 暗色键上的暖白字。
     static let darkKeyText = Color(hex: 0xF4F2EE)
@@ -223,45 +225,41 @@ struct AluminumPanelBackground: View {
     }
 }
 
-// MARK: - 指示灯、螺钉、键帽
+// MARK: - 选中墨点、螺钉、键帽
 
-/// 6pt 圆灯嵌在深色灯圈里；亮起时外发同色光晕。
+/// 选中标记：印在铝面上的石墨墨点，实心为开 / 选中，1pt 空心圈为关 / 未选，禁用时空心圈减淡。
+/// `inWindow` 用于画在深色显示窗里的位置图示：选中为一粒暖白光点，未选为暗点。
 struct LED: View {
-    enum Tone { case off, lit, rec, dim }
+    enum Tone { case off, lit, dim }
 
     var state: Tone
     var size: CGFloat = 6
+    var inWindow = false
 
     var body: some View {
-        ZStack {
-            if state == .lit || state == .rec {
-                Circle()
-                    .fill(glow)
-                    .frame(width: size + 6, height: size + 6)
-                    .blur(radius: 2.5)
+        mark
+            .frame(width: size + 3, height: size + 3)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var mark: some View {
+        let diameter = size + 1
+        if inWindow {
+            if state == .lit {
+                ZStack {
+                    Circle().fill(Instrument.lampGlow).frame(width: size + 2, height: size + 2).blur(radius: 1.5)
+                    Circle().fill(Instrument.lampWarm).frame(width: size, height: size)
+                }
+            } else {
+                Circle().fill(Color(hex: 0x4A4844)).frame(width: size - 1, height: size - 1)
             }
+        } else if state == .lit {
+            Circle().fill(Instrument.markOn).frame(width: diameter, height: diameter)
+        } else {
             Circle()
-                .fill(state == .dim ? Color(hex: 0x3A3936, opacity: 0.4) : Instrument.ledRing)
-                .frame(width: size + 3, height: size + 3)
-            Circle()
-                .fill(fill)
-                .frame(width: size, height: size)
+                .strokeBorder(Instrument.markRing.opacity(state == .dim ? 0.45 : 1), lineWidth: 1)
+                .frame(width: diameter, height: diameter)
         }
-        .frame(width: size + 3, height: size + 3)
-        .accessibilityHidden(true)
-    }
-
-    private var fill: Color {
-        switch state {
-        case .off: Instrument.ledOff
-        case .lit: Instrument.ledOn
-        case .rec: Instrument.signal
-        case .dim: Color(hex: 0x9D9B95)
-        }
-    }
-
-    private var glow: Color {
-        state == .rec ? Instrument.signal.opacity(0.5) : Instrument.ledGlow
     }
 }
 
@@ -408,7 +406,7 @@ struct KeyButtonStyle: ButtonStyle {
         case secondaryAction
         /// 控制条上的键：30 × 30。
         case hud
-        /// 互锁键：高 30，圆角 6，带灯。
+        /// 互锁键：高 30，圆角 6，带墨点。
         case segment
         /// 迷你互锁键：高 22，圆角 3。
         case segmentMini
@@ -648,37 +646,32 @@ private struct KeyBody<Label: View>: View {
 
 // MARK: - 拨杆
 
-/// 滑槽拨杆：左侧指示灯 + 深色矩形槽 36 × 20（圆角 6）+ 铝钮 16 × 14（圆角 3），四周留 3，与槽同心。
-/// 推到右侧为开（行程 14），指示灯同时亮起，槽底由石墨转为压暗的信号橙。
+/// 滑槽拨杆：矩形槽 36 × 20（圆角 6）+ 铝钮 16 × 14（圆角 3），四周留 3，与槽同心。
+/// 推到右侧为开（行程 14）；露出的槽面由浅铝铣槽变为石墨，不另配指示灯。
 struct SlideSwitch: View {
     let title: String
     @Binding var isOn: Bool
     var isBusy = false
-    var indicatorSpacing: CGFloat = 3
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ title: String, isOn: Binding<Bool>, isBusy: Bool = false, indicatorSpacing: CGFloat = 3) {
+    init(_ title: String, isOn: Binding<Bool>, isBusy: Bool = false) {
         self.title = title
         _isOn = isOn
         self.isBusy = isBusy
-        self.indicatorSpacing = indicatorSpacing
     }
 
     var body: some View {
         Button {
             isOn.toggle()
         } label: {
-            HStack(spacing: indicatorSpacing) {
-                LED(state: isOn ? .lit : .off)
-                ZStack(alignment: .leading) {
-                    slot
-                    SliderCap(width: 16, height: 14, vertical: true)
-                        .offset(x: isOn ? 17 : 3)
-                }
-                .frame(width: 36, height: 20)
+            ZStack(alignment: .leading) {
+                slot
+                SliderCap(width: 16, height: 14, vertical: true)
+                    .offset(x: isOn ? 17 : 3)
             }
+            .frame(width: 36, height: 20)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -693,8 +686,8 @@ struct SlideSwitch: View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return shape
             .fill(Instrument.slotOff)
-            .overlay { shape.fill(Instrument.slotOnTint).opacity(isOn ? 1 : 0) }
-            .overlay { InnerShadow(shape: shape, color: .black.opacity(0.55), radius: 1.5, y: 1) }
+            .overlay { shape.fill(Instrument.slotOn).opacity(isOn ? 1 : 0) }
+            .overlay { InnerShadow(shape: shape, color: .black.opacity(isOn ? 0.55 : 0.34), radius: 1.5, y: 1) }
             .background { shape.fill(Color.white.opacity(0.55)).offset(y: 1) }
     }
 }
@@ -752,7 +745,7 @@ struct SliderCap: View {
 
 // MARK: - 锁定键与互锁键
 
-/// 能锁住的键：按下后下沉、灯亮；再按弹起。未录制的内容键面置灰、灯不亮、不能按。
+/// 能锁住的键：按下后下沉、墨点变实心；再按弹起。未录制的内容键面置灰、空心圈减淡、不能按。
 struct LatchKey: View {
     let title: String
     let isOn: Bool
@@ -775,7 +768,7 @@ struct LatchKey: View {
     }
 }
 
-/// 相邻的互锁键：按下一颗，另一颗弹起；按下的键带亮灯。
+/// 相邻的互锁键：按下一颗，另一颗弹起；按下的键墨点为实心。
 struct InterlockKeys<Option: Hashable>: View {
     let accessibilityTitle: String
     let options: [Option]
@@ -1068,7 +1061,7 @@ private struct DotGrid: View {
     }
 }
 
-/// 导出中：一排十盏灯依次走马，1.2 秒一圈；减少动态效果时只亮第一盏。
+/// 导出中：显示窗里一排十粒暖白光点依次走马，1.2 秒一圈；减少动态效果时只亮第一粒。
 struct ChaserLights: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1079,9 +1072,9 @@ struct ChaserLights: View {
             HStack(spacing: 6) {
                 ForEach(0..<10, id: \.self) { index in
                     Circle()
-                        .fill(index == litIndex ? Instrument.ledOn : Instrument.ledOff)
+                        .fill(index == litIndex ? Instrument.lampWarm : Instrument.lampOff)
                         .frame(width: 7, height: 7)
-                        .shadow(color: index == litIndex ? Instrument.ledGlow : .clear, radius: 2)
+                        .shadow(color: index == litIndex ? Instrument.lampGlow : .clear, radius: 2)
                 }
             }
             .padding(.vertical, 9)

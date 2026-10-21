@@ -699,8 +699,7 @@ struct RecorderView: View {
                 title: "电脑声音", detail: ChannelDescriptions.systemAudio,
                 isOn: model.capturesSystemAudio
             ) {
-                SlideSwitch("电脑声音", isOn: $model.capturesSystemAudio,
-                    indicatorSpacing: Instrument.channelIndicatorSpacing)
+                SlideSwitch("电脑声音", isOn: $model.capturesSystemAudio)
             }
 
             channelStrip(
@@ -720,8 +719,7 @@ struct RecorderView: View {
                         isOn: Binding(
                             get: { model.capturesMicrophone },
                             set: { model.setMicrophoneCaptureEnabled($0) }
-                        ),
-                        indicatorSpacing: Instrument.channelIndicatorSpacing
+                        )
                     )
                     .disabled(!model.microphoneFeatureAvailable)
                 }
@@ -739,8 +737,7 @@ struct RecorderView: View {
                 detail: model.capturesMouseEffects ? ChannelDescriptions.mouseOn : ChannelDescriptions.mouseOff,
                 isOn: model.capturesMouseEffects
             ) {
-                SlideSwitch("录制鼠标", isOn: $model.capturesMouseEffects,
-                    indicatorSpacing: Instrument.channelIndicatorSpacing)
+                SlideSwitch("录制鼠标", isOn: $model.capturesMouseEffects)
             }
 
         }
@@ -763,8 +760,7 @@ struct RecorderView: View {
                     get: { model.capturesCamera },
                     set: { model.setCameraCaptureEnabled($0) }
                 ),
-                isBusy: model.isPreparingCamera,
-                indicatorSpacing: Instrument.channelIndicatorSpacing
+                isBusy: model.isPreparingCamera
             )
             if model.isPreparingCamera {
                 ProgressView().controlSize(.mini)
