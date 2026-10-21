@@ -49,12 +49,15 @@ enum Instrument {
     // 信号与状态
     static let signal = Color(hex: 0xEE5A24)
     static let signalDeep = Color(hex: 0xB8430F)
-    static let ledOn = Color(hex: 0xA8EB8A)
-    static let ledGlow = ledOn.opacity(0.6)
-    static let ledOff = Color(hex: 0x75736E)
+    // 指示灯与录制灯同用信号橙，不另设灯色；灭灯压暗到灯圈附近，保证亮 / 灭对比 ≥ 3:1。
+    static let ledOn = signal
+    static let ledGlow = signal.opacity(0.5)
+    static let ledOff = Color(hex: 0x3F3E3B)
     static let ledRing = Color(hex: 0x3A3936)
+    // 拨杆槽：关为石墨槽；开时在石墨槽上罩 72% 深信号橙，成为压暗的橙槽，与指示灯同步，不抢录制键。
+    static let slotOff = ledRing
+    static let slotOnTint = signalDeep.opacity(0.72)
     static let warn = Color(hex: 0x7A4300)
-    static let ok = Color(hex: 0x2A5E39)
 
     static let actionHeight: CGFloat = 44
     static let channelIndicatorSpacing: CGFloat = 5
@@ -646,7 +649,7 @@ private struct KeyBody<Label: View>: View {
 // MARK: - 拨杆
 
 /// 滑槽拨杆：左侧指示灯 + 深色矩形槽 36 × 20（圆角 6）+ 铝钮 16 × 14（圆角 3），四周留 3，与槽同心。
-/// 推到右侧为开（行程 14），指示灯同时亮起。
+/// 推到右侧为开（行程 14），指示灯同时亮起，槽底由石墨转为压暗的信号橙。
 struct SlideSwitch: View {
     let title: String
     @Binding var isOn: Bool
@@ -689,7 +692,8 @@ struct SlideSwitch: View {
     private var slot: some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return shape
-            .fill(Instrument.ledRing)
+            .fill(Instrument.slotOff)
+            .overlay { shape.fill(Instrument.slotOnTint).opacity(isOn ? 1 : 0) }
             .overlay { InnerShadow(shape: shape, color: .black.opacity(0.55), radius: 1.5, y: 1) }
             .background { shape.fill(Color.white.opacity(0.55)).offset(y: 1) }
     }
@@ -1075,7 +1079,7 @@ struct ChaserLights: View {
             HStack(spacing: 6) {
                 ForEach(0..<10, id: \.self) { index in
                     Circle()
-                        .fill(index == litIndex ? Instrument.ledOn : Color(hex: 0x3F3E3B))
+                        .fill(index == litIndex ? Instrument.ledOn : Instrument.ledOff)
                         .frame(width: 7, height: 7)
                         .shadow(color: index == litIndex ? Instrument.ledGlow : .clear, radius: 2)
                 }
