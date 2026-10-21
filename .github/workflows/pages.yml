@@ -1,0 +1,47 @@
+name: Pages
+
+# 产品主页不进版本控制：站点包作为资源保存在不公开的草稿 Release（tag 名 site）里，
+# 由维护者手动触发本工作流，下载站点包并发布到 GitHub Pages。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # 只有具备写权限的令牌才能读取草稿 Release
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download site bundle from the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          asset_id=$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.draft and .tag_name == "site")][0].assets[] | select(.name == "site.tar.gz") | .id')
+          test -n "$asset_id"
+          gh api -H "Accept: application/octet-stream" "repos/$REPO/releases/assets/$asset_id" > site.tar.gz
+          mkdir _site
+          tar -xzf site.tar.gz -C _site
+          test -f _site/index.html
+          du -sh _site
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
