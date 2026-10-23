@@ -15,7 +15,7 @@ Snap Recorder 是一款开源的 macOS 录屏工具：打开就会用，录完�
 [![芯片](https://img.shields.io/badge/Apple%20Silicon%20%2F%20Intel-%E9%80%9A%E7%94%A8-434240)](#三步开始)
 [![许可](https://img.shields.io/github/license/shuyan-5200/snap-recorder?label=%E8%AE%B8%E5%8F%AF&color=434240)](LICENSE)
 
-<a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.0/Snap-Recorder-v2.0.0-macOS-universal.zip"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-download.png" width="300" alt="免费下载 Mac 版（v2.0，约 2.4 MB）"></a>
+<a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.1/Snap-Recorder-v2.0.1-macOS-universal.zip"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-download.png" width="300" alt="免费下载 Mac 版（v2.0.1，约 2.5 MB）"></a>
 &nbsp;
 <a href="https://shuyan-5200.github.io/snap-recorder/"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-site.png" width="300" alt="打开产品主页"></a>
 
@@ -115,7 +115,7 @@ Snap Recorder 是一款开源的 macOS 录屏工具：打开就会用，录完�
 
 ## 三步开始
 
-1. **下载**：[点这里下载 ZIP](https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.0/Snap-Recorder-v2.0.0-macOS-universal.zip)（约 2.4 MB），解压后把 Snap Recorder 拖进「应用程序」。
+1. **下载**：[点这里下载 ZIP](https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.1/Snap-Recorder-v2.0.1-macOS-universal.zip)（约 2.5 MB），解压后把 Snap Recorder 拖进「应用程序」。
 2. **授权**：第一次录制时，按提示允许「屏幕录制」。麦克风和摄像头只在你打开对应开关时才会请求。
 3. **开录**：选好来源，按 ⌘R；录完命名、选好导出方式，点保存，文件就在「下载」里。
 
@@ -168,7 +168,7 @@ Snap Recorder 是一款开源的 macOS 录屏工具：打开就会用，录完�
 如果它帮你省下一笔订阅费，或者少折腾了一回，<br>
 **点一下页面右上角的 ⭐ Star**，让更多人用上它。
 
-<a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.0/Snap-Recorder-v2.0.0-macOS-universal.zip"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-download.png" width="300" alt="免费下载 Mac 版（v2.0，约 2.4 MB）"></a>
+<a href="https://github.com/shuyan-5200/snap-recorder/releases/download/v2.0.1/Snap-Recorder-v2.0.1-macOS-universal.zip"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-download.png" width="300" alt="免费下载 Mac 版（v2.0.1，约 2.5 MB）"></a>
 &nbsp;
 <a href="https://shuyan-5200.github.io/snap-recorder/"><img src="https://shuyan-5200.github.io/snap-recorder/images/readme/button-site.png" width="300" alt="打开产品主页"></a>
 
